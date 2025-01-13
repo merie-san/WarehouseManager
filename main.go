@@ -1,9 +1,12 @@
 package main
 
-import "fmt"
+import (
+	"WarehouseManager/internal/model"
+	"fmt"
+)
 
 func main() {
-	rep, err1 := NewGORMSQLiteWarehouseRepository("test.db")
+	rep, err1 := model.NewGORMSQLiteWarehouseRepository("test.db")
 	if err1 != nil {
 		panic(err1)
 	}
