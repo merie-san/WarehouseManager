@@ -216,42 +216,24 @@ func (r *GORMSQLiteWarehouseRepository) FindItemsByCategory(category string) ([]
 
 func (r *GORMSQLiteWarehouseRepository) FindItemsInWarehouse(warehouseID uint) ([]LoadedItemPack, error) {
 	var correspondence []WarehouseItem
-	var res []LoadedItemPack
 	err1 := r.DB.Model(&WarehouseItem{}).Where("warehouse_id = ?", warehouseID).Find(&correspondence).Error
 	if err1 != nil {
 		return nil, err1
 	}
-	for _, v := range correspondence {
-		temp1, err2 := r.FindItemByID(v.ItemID)
-		temp2, err3 := r.FindWarehouseByID(v.WarehouseID)
-		if err2 != nil {
-			return nil, err2
-		}
-		if err3 != nil {
-			return nil, err3
-		}
-		res = append(res, LoadedItemPack{
-			ItemID:            v.ItemID,
-			ItemName:          temp1.Name,
-			ItemDescription:   temp1.Description,
-			ItemCategory:      temp1.Category,
-			ItemQuantity:      v.Quantity,
-			WarehouseID:       warehouseID,
-			WarehouseName:     temp2.Name,
-			WarehousePosition: temp2.Position,
-			WarehouseCapacity: temp2.Capacity,
-		})
-	}
-	return res, nil
+	return r.findItemPacks(correspondence)
 }
 
 func (r *GORMSQLiteWarehouseRepository) FindWarehousesForItem(itemID uint) ([]LoadedItemPack, error) {
 	var correspondence []WarehouseItem
-	var res []LoadedItemPack
 	err1 := r.DB.Model(&WarehouseItem{}).Where("item_id = ?", itemID).Find(&correspondence).Error
 	if err1 != nil {
 		return nil, err1
 	}
+	return r.findItemPacks(correspondence)
+}
+
+func (r *GORMSQLiteWarehouseRepository) findItemPacks(correspondence []WarehouseItem) ([]LoadedItemPack, error) {
+	var res []LoadedItemPack
 	for _, v := range correspondence {
 		temp1, err2 := r.FindWarehouseByID(v.WarehouseID)
 		temp2, err3 := r.FindItemByID(v.ItemID)
@@ -323,22 +305,27 @@ func (r *GORMSQLiteWarehouseRepository) SupplyItems(itemID uint, warehouseID uin
 	if err2 != nil {
 		return err2
 	}
-	db := r.DB.Table("warehouse_items").Where("warehouse_id = ?", warehouseID).Find(&warehouseItems1)
-	err3 := db.Error
+	err := r.checkIfEnoughCapacity(warehouseID, warehouseItems1, nItems, quantity, warehouse)
+	if err != nil {
+		return err
+	}
+	err3 := r.supplyUpdateWarehouseItems(itemID, warehouseID, quantity, warehouseItems2)
 	if err3 != nil {
 		return err3
 	}
-	if len(warehouseItems1) != 0 {
-		err4 := db.Select("SUM(quantity)").Scan(&nItems).Error
-		if err4 != nil {
-			return err4
-		}
-	} else {
-		nItems = 0
+	return r.supplyUpdateItems(item, quantity)
+}
+
+func (r *GORMSQLiteWarehouseRepository) supplyUpdateItems(item Item, quantity int) error {
+	item.Quantity += quantity
+	err8 := r.DB.Save(&item).Error
+	if err8 != nil {
+		return err8
 	}
-	if nItems+quantity > warehouse.Capacity {
-		return errors.New("warehouse is full: " + strconv.Itoa(nItems+quantity) + " > " + strconv.Itoa(warehouse.Capacity))
-	}
+	return nil
+}
+
+func (r *GORMSQLiteWarehouseRepository) supplyUpdateWarehouseItems(itemID uint, warehouseID uint, quantity int, warehouseItems2 []WarehouseItem) error {
 	err5 := r.DB.Model(&WarehouseItem{}).Where("item_id = ? AND warehouse_id = ?", itemID, warehouseID).Find(&warehouseItems2).Error
 	if err5 != nil {
 		return err5
@@ -355,10 +342,25 @@ func (r *GORMSQLiteWarehouseRepository) SupplyItems(itemID uint, warehouseID uin
 			return err7
 		}
 	}
-	item.Quantity += quantity
-	err8 := r.DB.Save(&item).Error
-	if err8 != nil {
-		return err8
+	return nil
+}
+
+func (r *GORMSQLiteWarehouseRepository) checkIfEnoughCapacity(warehouseID uint, warehouseItems1 []WarehouseItem, nItems int, quantity int, warehouse Warehouse) error {
+	db := r.DB.Table("warehouse_items").Where("warehouse_id = ?", warehouseID).Find(&warehouseItems1)
+	err3 := db.Error
+	if err3 != nil {
+		return err3
+	}
+	if len(warehouseItems1) != 0 {
+		err4 := db.Select("SUM(quantity)").Scan(&nItems).Error
+		if err4 != nil {
+			return err4
+		}
+	} else {
+		nItems = 0
+	}
+	if nItems+quantity > warehouse.Capacity {
+		return errors.New("warehouse is full: " + strconv.Itoa(nItems+quantity) + " > " + strconv.Itoa(warehouse.Capacity))
 	}
 	return nil
 }
@@ -378,9 +380,27 @@ func (r *GORMSQLiteWarehouseRepository) ConsumeItems(itemID uint, warehouseID ui
 	if err2 != nil {
 		return err2
 	}
-	if item.Quantity < quantity {
-		return errors.New("not enough items: " + strconv.Itoa(item.Quantity) + " < " + strconv.Itoa(quantity))
+	err := r.checkIfEnoughItems(item, quantity)
+	if err != nil {
+		return err
 	}
+	err4 := r.consumeUpdateWarehouseItems(itemID, warehouseID, quantity, warehouseItems)
+	if err4 != nil {
+		return err4
+	}
+	return r.consumeUpdateItems(item, quantity)
+}
+
+func (r *GORMSQLiteWarehouseRepository) consumeUpdateItems(item Item, quantity int) error {
+	item.Quantity -= quantity
+	err5 := r.DB.Save(&item).Error
+	if err5 != nil {
+		return err5
+	}
+	return nil
+}
+
+func (r *GORMSQLiteWarehouseRepository) consumeUpdateWarehouseItems(itemID uint, warehouseID uint, quantity int, warehouseItems []WarehouseItem) error {
 	err3 := r.DB.Model(&WarehouseItem{}).Where("item_id = ? AND warehouse_id = ?", itemID, warehouseID).Find(&warehouseItems).Error
 	if err3 != nil {
 		return err3
@@ -396,10 +416,12 @@ func (r *GORMSQLiteWarehouseRepository) ConsumeItems(itemID uint, warehouseID ui
 			return err4
 		}
 	}
-	item.Quantity -= quantity
-	err5 := r.DB.Save(&item).Error
-	if err5 != nil {
-		return err5
+	return nil
+}
+
+func (r *GORMSQLiteWarehouseRepository) checkIfEnoughItems(item Item, quantity int) error {
+	if item.Quantity < quantity {
+		return errors.New("not enough items: " + strconv.Itoa(item.Quantity) + " < " + strconv.Itoa(quantity))
 	}
 	return nil
 }
