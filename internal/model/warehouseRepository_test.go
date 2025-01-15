@@ -79,6 +79,28 @@ func TestGORMRepository(t *testing.T) {
 			}
 		})
 	}
+	t.Run("ListAll", func(t *testing.T) {
+		loadedWarehouses, err := rep.ListAllWarehouses()
+		if err != nil {
+			t.Fatalf("Reported error: %v", err)
+		}
+		for i, v := range loadedWarehouses {
+			if v.Name != warehouses[i].Name || v.Position != warehouses[i].Position || v.Capacity != warehouses[i].Capacity {
+				t.Errorf("Unexpected warehouse loaded\nexpected- name: %s position: %s capacity: %d\nactual- name %s position: %s capacity: %d",
+					warehouses[i].Name, warehouses[i].Position, warehouses[i].Capacity, v.Name, v.Position, v.Capacity)
+			}
+		}
+		loadedItems, err2 := rep.ListAllItems()
+		if err2 != nil {
+			t.Fatalf("Reported error: %v", err)
+		}
+		for i, v := range loadedItems {
+			if v.Name != items[i].Name || v.Category != items[i].Category || v.Description != items[i].Description {
+				t.Errorf("Unexpected item loaded\nexpected- name: %s category: %s description: %s\nactual- name %s category: %s description: %s",
+					items[i].Name, items[i].Category, items[i].Description, v.Name, v.Category, items[i].Description)
+			}
+		}
+	})
 	for i := 1; i <= 2; i++ {
 		t.Run("FindItemByID "+strconv.Itoa(i), func(t *testing.T) {
 			temp, err2 := rep.FindItemByID(uint(i))

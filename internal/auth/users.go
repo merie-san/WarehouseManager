@@ -18,8 +18,8 @@ type User struct {
 	AssignedDatabase  string `json:"assignedDatabase"`
 }
 
-// GeneralUserSessionManager is an interface managing user sessions and resource operations for items and warehouses.
-type GeneralUserSessionManager interface {
+// GeneralAuthManager is an interface managing user sessions and resource operations for items and warehouses.
+type GeneralAuthManager interface {
 
 	/* Authentication operations */
 
@@ -27,56 +27,65 @@ type GeneralUserSessionManager interface {
 	Save() error
 
 	// Login initiates a new user session with the specified user instance
-	Login(username string, password string) error
+	Login(username string, password string) (uint, error)
 
 	// Logout terminates the current user session and clears any associated session data.
-	Logout() error
+	Logout(username string) error
 
 	// Register registers a new user using the provided username and password, returning an error if the operation fails.
 	Register(username string, password string) error
 
 	// ChangePassword updates the user's password by validating the old password and setting a new one. Returns an error if failed.
-	ChangePassword(oldPassword string, newPassword string) error
+	ChangePassword(username string, oldPassword string, newPassword string) error
+
+	// IsLoggedIn checks and returns true if a user is currently logged in, otherwise returns false.
+	IsLoggedIn(username string) bool
 
 	/* Repository operations */
 
-	FindItemByID(itemID uint) (model.Item, error)
-	FindWarehouseByID(warehouseID uint) (model.Warehouse, error)
-	FindItemsByKeyword(keyword string) ([]model.Item, error)
-	FindItemByName(name string) ([]model.Item, error)
-	FindWarehouseByName(name string) ([]model.Warehouse, error)
-	FindWarehousesByPosition(position string) ([]model.Warehouse, error)
-	FindItemsByCategory(category string) ([]model.Item, error)
-	FindItemsInWarehouse(warehouseID uint) ([]model.LoadedItemPack, error)
-	FindWarehousesForItem(itemID uint) ([]model.LoadedItemPack, error)
-	CreateItem(name string, category string, description string) error
-	CreateWarehouse(name string, position string, capacity int) error
-	UpdateItem(itemID uint, name string, category string, description string) error
-	UpdateWarehouse(warehouseID uint, name string, position string, capacity int) error
-	DeleteItem(itemID uint) error
-	DeleteWarehouse(warehouseID uint) error
-	SupplyItems(itemID uint, warehouseID uint, quantity int) error
-	ConsumeItems(itemID uint, warehouseID uint, quantity int) error
-	TransferItems(itemID uint, sourceWarehouseID uint, quantity int, destinationWarehouseID uint) error
+	FindItemByID(userID uint, itemID uint) (model.Item, error)
+	FindWarehouseByID(userID uint, warehouseID uint) (model.Warehouse, error)
+	FindItemsByKeyword(userID uint, keyword string) ([]model.Item, error)
+	FindItemByName(userID uint, name string) ([]model.Item, error)
+	FindWarehouseByName(userID uint, name string) ([]model.Warehouse, error)
+	FindWarehousesByPosition(userID uint, position string) ([]model.Warehouse, error)
+	FindItemsByCategory(userID uint, category string) ([]model.Item, error)
+	FindItemsInWarehouse(userID uint, warehouseID uint) ([]model.LoadedItemPack, error)
+	FindWarehousesForItem(userID uint, itemID uint) ([]model.LoadedItemPack, error)
+	CreateItem(userID uint, name string, category string, description string) error
+	CreateWarehouse(userID uint, name string, position string, capacity int) error
+	UpdateItem(userID uint, itemID uint, name string, category string, description string) error
+	UpdateWarehouse(userID uint, warehouseID uint, name string, position string, capacity int) error
+	DeleteItem(userID uint, itemID uint) error
+	DeleteWarehouse(userID uint, warehouseID uint) error
+	SupplyItems(userID uint, itemID uint, warehouseID uint, quantity int) error
+	ConsumeItems(userID uint, itemID uint, warehouseID uint, quantity int) error
+	TransferItems(userID uint, itemID uint, sourceWarehouseID uint, quantity int, destinationWarehouseID uint) error
+	ListAllItems(userID uint) ([]model.Item, error)
+	ListAllWarehouses(userID uint) ([]model.Warehouse, error)
 }
 
-// UserSessionManager implements GeneralUserSessionManager by using an underlying WarehouseRepository.
+// AuthManager implements GeneralAuthManager by using an underlying WarehouseRepository.
 // The struct manages user sessions by matching requests to the correct database and
 // updating a list of registered users which is timely synchronized with a json file
-type UserSessionManager struct {
+type AuthManager struct {
 	Users       []User
 	injector    func(string) (model.WarehouseRepository, error)
-	DB          model.WarehouseRepository
-	CurrentUser *User
+	ActiveUsers []ActiveUser
 }
 
-// Singleton of UserSessionManager
-var manager *UserSessionManager
+type ActiveUser struct {
+	User *User
+	DB   model.WarehouseRepository
+}
 
-// LoadUserManager initializes and returns a singleton UserSessionManager with user data loaded from a JSON file.
+// Singleton of AuthManager
+var manager *AuthManager
+
+// LoadUserManager initializes and returns a singleton AuthManager with user data loaded from a JSON file.
 // It accepts a dependency injector function for providing WarehouseRepository implementations.
 // Returns an error if user data decoding fails or if other file operations encounter issues.
-func LoadUserManager(injector func(string) (model.WarehouseRepository, error)) (*UserSessionManager, error) {
+func LoadUserManager(injector func(string) (model.WarehouseRepository, error)) (*AuthManager, error) {
 	if manager == nil {
 		var f *os.File
 		users := make([]User, 0)
@@ -98,12 +107,12 @@ func LoadUserManager(injector func(string) (model.WarehouseRepository, error)) (
 				return nil, err2
 			}
 		}
-		manager = &UserSessionManager{Users: users, injector: injector}
+		manager = &AuthManager{Users: users, injector: injector}
 	}
 	return manager, nil
 }
 
-func (manager *UserSessionManager) Save() error {
+func (manager *AuthManager) Save() error {
 	f, err := os.Create("users.json")
 	if err != nil {
 		return err
@@ -117,31 +126,56 @@ func (manager *UserSessionManager) Save() error {
 	return nil
 }
 
-func (manager *UserSessionManager) Login(username string, password string) error {
-	if manager.CurrentUser != nil {
-		return errors.New("active session found, logout first")
+func (manager *AuthManager) IsLoggedIn(username string) bool {
+	found := false
+	for _, activeUser := range manager.ActiveUsers {
+		if activeUser.User.Username == username {
+			found = true
+		}
+	}
+	return found
+}
+
+func (manager *AuthManager) Login(username string, password string) (uint, error) {
+	found := false
+	for _, v := range manager.ActiveUsers {
+		if v.User.Username == username {
+			found = true
+		}
+	}
+	if found {
+		return 0, errors.New("user's active session found, log out first")
 	}
 	for _, v := range manager.Users {
 		if v.Username == username && v.EncryptedPassword == ShaHashing(password) {
-			manager.CurrentUser = &v
-			var err error
-			manager.DB, err = manager.injector(v.AssignedDatabase)
+			db, err := manager.injector(v.AssignedDatabase)
+			manager.ActiveUsers = append(manager.ActiveUsers, ActiveUser{User: &v, DB: db})
 			if err != nil {
-				return err
+				return 0, err
 			}
-			return nil
+			return v.UserID, nil
 		}
 	}
-	return errors.New("invalid username or password")
+	return 0, errors.New("invalid username or password")
 }
 
-func (manager *UserSessionManager) Logout() error {
-	if manager.CurrentUser == nil {
+func (manager *AuthManager) Logout(username string) error {
+	found := false
+	var index int
+	for i, v := range manager.ActiveUsers {
+		if v.User.Username == username {
+			index = i
+			found = true
+		}
+	}
+	if !found {
 		return errors.New("user hasn't logged in yet")
 	}
-	_ = manager.DB.Close()
-	manager.CurrentUser = nil
-	manager.DB = nil
+	_ = manager.ActiveUsers[index].DB.Close()
+	temp := make([]ActiveUser, 0)
+	temp = append(temp, manager.ActiveUsers[:index]...)
+	temp = append(temp, manager.ActiveUsers[index+1:]...)
+	manager.ActiveUsers = temp
 	return nil
 }
 
@@ -151,7 +185,7 @@ func ShaHashing(input string) string {
 	return hex.EncodeToString(sha256Hash[:])
 }
 
-func (manager *UserSessionManager) Register(username string, password string) error {
+func (manager *AuthManager) Register(username string, password string) error {
 	for _, v := range manager.Users {
 		if v.Username == username {
 			return errors.New("username already exists")
@@ -169,147 +203,206 @@ func (manager *UserSessionManager) Register(username string, password string) er
 	return manager.Save()
 }
 
-func (manager *UserSessionManager) DeleteAllUsers() error {
+func (manager *AuthManager) DeleteAllUsers() error {
 	manager.Users = []User{}
-	manager.CurrentUser = nil
-	manager.DB = nil
+	for _, v := range manager.ActiveUsers {
+		_ = v.DB.Close()
+	}
+	manager.ActiveUsers = nil
 	return manager.Save()
 }
 
-func (manager *UserSessionManager) ChangePassword(oldPassword string, newPassword string) error {
-	if manager.CurrentUser == nil {
-		return errors.New("user hasn't logged in yet")
+func (manager *AuthManager) ChangePassword(username string, oldPassword string, newPassword string) error {
+	var index int
+	found := false
+	for i, v := range manager.ActiveUsers {
+		if v.User.EncryptedPassword == ShaHashing(oldPassword) && v.User.Username == username {
+			index = i
+			found = true
+		}
 	}
-	if manager.CurrentUser.EncryptedPassword != ShaHashing(oldPassword) {
-		return errors.New("incorrect password")
+	if !found {
+		return errors.New("invalid username or old password")
 	}
-	manager.CurrentUser.EncryptedPassword = ShaHashing(newPassword)
-	manager.Users[manager.CurrentUser.UserID] = *manager.CurrentUser
+	if len(newPassword) < 8 {
+		return errors.New("new password must be at least 8 characters long")
+	}
+	manager.ActiveUsers[index].User.EncryptedPassword = ShaHashing(newPassword)
+	manager.Users[manager.ActiveUsers[index].User.UserID] = *manager.ActiveUsers[index].User
 	return manager.Save()
 }
 
-func (manager *UserSessionManager) FindItemByID(itemID uint) (model.Item, error) {
-	if manager.CurrentUser == nil {
-		return model.Item{}, errors.New("user hasn't logged in yet")
+func (manager *AuthManager) FindItemByID(userID uint, itemID uint) (model.Item, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return model.Item{}, err
 	}
-	return manager.DB.FindItemByID(itemID)
+	return manager.ActiveUsers[index].DB.FindItemByID(itemID)
 }
 
-func (manager *UserSessionManager) FindWarehouseByID(warehouseID uint) (model.Warehouse, error) {
-	if manager.CurrentUser == nil {
-		return model.Warehouse{}, errors.New("user hasn't logged in yet")
+func (manager *AuthManager) FindWarehouseByID(userID uint, warehouseID uint) (model.Warehouse, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return model.Warehouse{}, err
 	}
-	return manager.DB.FindWarehouseByID(warehouseID)
+	return manager.ActiveUsers[index].DB.FindWarehouseByID(warehouseID)
 }
 
-func (manager *UserSessionManager) FindItemsByKeyword(keyword string) ([]model.Item, error) {
-	if manager.CurrentUser == nil {
-		return nil, errors.New("user hasn't logged in yet")
+func (manager *AuthManager) FindItemsByKeyword(userID uint, keyword string) ([]model.Item, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return nil, err
 	}
-	return manager.DB.FindItemsByKeyword(keyword)
+	return manager.ActiveUsers[index].DB.FindItemsByKeyword(keyword)
 }
 
-func (manager *UserSessionManager) FindItemByName(name string) ([]model.Item, error) {
-	if manager.CurrentUser == nil {
-		return nil, errors.New("user hasn't logged in yet")
+func (manager *AuthManager) FindItemByName(userID uint, name string) ([]model.Item, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return nil, err
 	}
-	return manager.DB.FindItemByName(name)
+	return manager.ActiveUsers[index].DB.FindItemByName(name)
 }
 
-func (manager *UserSessionManager) FindWarehouseByName(name string) ([]model.Warehouse, error) {
-	if manager.CurrentUser == nil {
-		return nil, errors.New("user hasn't logged in yet")
+func (manager *AuthManager) FindWarehouseByName(userID uint, name string) ([]model.Warehouse, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return nil, err
 	}
-	return manager.DB.FindWarehouseByName(name)
+	return manager.ActiveUsers[index].DB.FindWarehouseByName(name)
 }
 
-func (manager *UserSessionManager) FindWarehousesByPosition(position string) ([]model.Warehouse, error) {
-	if manager.CurrentUser == nil {
-		return nil, errors.New("user hasn't logged in yet")
+func (manager *AuthManager) FindWarehousesByPosition(userID uint, position string) ([]model.Warehouse, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return nil, err
 	}
-	return manager.DB.FindWarehousesByPosition(position)
+	return manager.ActiveUsers[index].DB.FindWarehousesByPosition(position)
 }
 
-func (manager *UserSessionManager) FindItemsByCategory(category string) ([]model.Item, error) {
-	if manager.CurrentUser == nil {
-		return nil, errors.New("user hasn't logged in yet")
+func (manager *AuthManager) FindItemsByCategory(userID uint, category string) ([]model.Item, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return nil, err
 	}
-	return manager.DB.FindItemsByCategory(category)
+	return manager.ActiveUsers[index].DB.FindItemsByCategory(category)
 }
 
-func (manager *UserSessionManager) FindItemsInWarehouse(warehouseID uint) ([]model.LoadedItemPack, error) {
-	if manager.CurrentUser == nil {
-		return nil, errors.New("user hasn't logged in yet")
+func (manager *AuthManager) FindItemsInWarehouse(userID uint, warehouseID uint) ([]model.LoadedItemPack, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return nil, err
 	}
-	return manager.DB.FindItemsInWarehouse(warehouseID)
+	return manager.ActiveUsers[index].DB.FindItemsInWarehouse(warehouseID)
 }
 
-func (manager *UserSessionManager) FindWarehousesForItem(itemID uint) ([]model.LoadedItemPack, error) {
-	if manager.CurrentUser == nil {
-		return nil, errors.New("user hasn't logged in yet")
+func (manager *AuthManager) FindWarehousesForItem(userID uint, itemID uint) ([]model.LoadedItemPack, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return nil, err
 	}
-	return manager.DB.FindWarehousesForItem(itemID)
+	return manager.ActiveUsers[index].DB.FindWarehousesForItem(itemID)
 }
 
-func (manager *UserSessionManager) CreateItem(name string, category string, description string) error {
-	if manager.CurrentUser == nil {
-		return errors.New("user hasn't logged in yet")
+func (manager *AuthManager) CreateItem(userID uint, name string, category string, description string) error {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return err
 	}
-	return manager.DB.CreateItem(name, category, description)
+	return manager.ActiveUsers[index].DB.CreateItem(name, category, description)
 }
 
-func (manager *UserSessionManager) CreateWarehouse(name string, position string, capacity int) error {
-	if manager.CurrentUser == nil {
-		return errors.New("user hasn't logged in yet")
+func (manager *AuthManager) CreateWarehouse(userID uint, name string, position string, capacity int) error {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return err
 	}
-	return manager.DB.CreateWarehouse(name, position, capacity)
+	return manager.ActiveUsers[index].DB.CreateWarehouse(name, position, capacity)
 }
 
-func (manager *UserSessionManager) UpdateItem(itemID uint, name string, category string, description string) error {
-	if manager.CurrentUser == nil {
-		return errors.New("user hasn't logged in yet")
+func (manager *AuthManager) UpdateItem(userID uint, itemID uint, name string, category string, description string) error {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return err
 	}
-	return manager.DB.UpdateItem(itemID, name, category, description)
+	return manager.ActiveUsers[index].DB.UpdateItem(itemID, name, category, description)
 }
 
-func (manager *UserSessionManager) UpdateWarehouse(warehouseID uint, name string, position string, capacity int) error {
-	if manager.CurrentUser == nil {
-		return errors.New("user hasn't logged in yet")
+func (manager *AuthManager) UpdateWarehouse(userID uint, warehouseID uint, name string, position string, capacity int) error {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return err
 	}
-	return manager.DB.UpdateWarehouse(warehouseID, name, position, capacity)
+	return manager.ActiveUsers[index].DB.UpdateWarehouse(warehouseID, name, position, capacity)
 }
 
-func (manager *UserSessionManager) DeleteItem(itemID uint) error {
-	if manager.CurrentUser == nil {
-		return errors.New("user hasn't logged in yet")
+func (manager *AuthManager) DeleteItem(userID uint, itemID uint) error {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return err
 	}
-	return manager.DB.DeleteItem(itemID)
+	return manager.ActiveUsers[index].DB.DeleteItem(itemID)
 }
 
-func (manager *UserSessionManager) DeleteWarehouse(warehouseID uint) error {
-	if manager.CurrentUser == nil {
-		return errors.New("user hasn't logged in yet")
+func (manager *AuthManager) DeleteWarehouse(userID uint, warehouseID uint) error {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return err
 	}
-	return manager.DB.DeleteWarehouse(warehouseID)
+	return manager.ActiveUsers[index].DB.DeleteWarehouse(warehouseID)
 }
 
-func (manager *UserSessionManager) SupplyItems(itemID uint, warehouseID uint, quantity int) error {
-	if manager.CurrentUser == nil {
-		return errors.New("user hasn't logged in yet")
+func (manager *AuthManager) SupplyItems(userID uint, itemID uint, warehouseID uint, quantity int) error {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return err
 	}
-	return manager.DB.SupplyItems(itemID, warehouseID, quantity)
+	return manager.ActiveUsers[index].DB.SupplyItems(itemID, warehouseID, quantity)
 }
 
-func (manager *UserSessionManager) ConsumeItems(itemID uint, warehouseID uint, quantity int) error {
-	if manager.CurrentUser == nil {
-		return errors.New("user hasn't logged in yet")
+func (manager *AuthManager) ConsumeItems(userID uint, itemID uint, warehouseID uint, quantity int) error {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return err
 	}
-	return manager.DB.ConsumeItems(itemID, warehouseID, quantity)
+	return manager.ActiveUsers[index].DB.ConsumeItems(itemID, warehouseID, quantity)
 }
 
-func (manager *UserSessionManager) TransferItems(itemID uint, sourceWarehouseID uint, quantity int, destinationWarehouseID uint) error {
-	if manager.CurrentUser == nil {
-		return errors.New("user hasn't logged in yet")
+func (manager *AuthManager) TransferItems(userID uint, itemID uint, sourceWarehouseID uint, quantity int, destinationWarehouseID uint) error {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return err
 	}
-	return manager.DB.TransferItems(itemID, sourceWarehouseID, quantity, destinationWarehouseID)
+	return manager.ActiveUsers[index].DB.TransferItems(itemID, sourceWarehouseID, quantity, destinationWarehouseID)
+}
+
+func (manager *AuthManager) checkLogin(userID uint) (int, error) {
+	found := false
+	var index int
+	for i, v := range manager.ActiveUsers {
+		if v.User.UserID == userID {
+			index = i
+			found = true
+		}
+	}
+	if !found {
+		return 0, errors.New("user isn't logged in")
+	}
+	return index, nil
+}
+
+func (manager *AuthManager) ListAllItems(userID uint) ([]model.Item, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return nil, err
+	}
+	return manager.ActiveUsers[index].DB.ListAllItems()
+}
+
+func (manager *AuthManager) ListAllWarehouses(userID uint) ([]model.Warehouse, error) {
+	index, err := manager.checkLogin(userID)
+	if err != nil {
+		return nil, err
+	}
+	return manager.ActiveUsers[index].DB.ListAllWarehouses()
 }

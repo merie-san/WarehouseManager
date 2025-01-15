@@ -53,6 +53,13 @@ type LoadedItemPack struct {
 
 // WarehouseRepository is an interface used to define repositories used by the application
 type WarehouseRepository interface {
+
+	// ListAllWarehouses returns a list of every warehouse in the repository
+	ListAllWarehouses() ([]Warehouse, error)
+
+	// ListAllItems returns a list of every item in the repository
+	ListAllItems() ([]Item, error)
+
 	// FindItemByID searches for an item in the repository with the specified ID and return it as an Item struct
 	FindItemByID(itemID uint) (Item, error)
 
@@ -138,6 +145,18 @@ func (r *GORMSQLiteWarehouseRepository) Close() error {
 		return err
 	}
 	return db.Close()
+}
+
+func (r *GORMSQLiteWarehouseRepository) ListAllWarehouses() ([]Warehouse, error) {
+	var warehouses []Warehouse
+	err := r.DB.Find(&warehouses).Error
+	return warehouses, err
+}
+
+func (r *GORMSQLiteWarehouseRepository) ListAllItems() ([]Item, error) {
+	var items []Item
+	err := r.DB.Find(&items).Error
+	return items, err
 }
 
 func (r *GORMSQLiteWarehouseRepository) CreateItem(name string, category string, description string) error {

@@ -17,7 +17,7 @@ type testUser struct {
 }
 
 func TestUserSessionManager(t *testing.T) {
-	var manager *UserSessionManager
+	var manager *AuthManager
 	t.Run("LoadUserManager", func(t *testing.T) {
 		var err1 error
 		manager, err1 = LoadUserManager(func(name string) (model.WarehouseRepository, error) {
@@ -35,9 +35,10 @@ func TestUserSessionManager(t *testing.T) {
 		}
 	})
 	t.Cleanup(func() {
-		if manager.CurrentUser != nil {
-			manager.Logout()
+		for _, v := range manager.ActiveUsers {
+			_ = v.DB.Close()
 		}
+		manager.ActiveUsers = make([]ActiveUser, 0)
 		err := manager.DeleteAllUsers()
 		if err != nil {
 			t.Fatalf("Reported error: %v", err)
@@ -108,100 +109,106 @@ func TestUserSessionManager(t *testing.T) {
 		}
 	})
 	t.Run("Operations without login", func(t *testing.T) {
-		err := manager.Logout()
+		err := manager.Logout("user1")
 		if err == nil {
 			t.Errorf("No error reported when logging out without having first logged in")
 		}
-		err2 := manager.DeleteItem(1)
+		err2 := manager.DeleteItem(0, 1)
 		if err2 == nil {
 			t.Errorf("No error reported when deleting item without having first logged in")
 		}
-		_, err3 := manager.FindItemsByKeyword("Hello")
+		_, err3 := manager.FindItemsByKeyword(0, "Hello")
 		if err3 == nil {
 			t.Errorf("No error reported when searching for items without having first logged in")
 		}
 	})
 	t.Run("Login", func(t *testing.T) {
-		err1 := manager.Login("user1", "<PASSWORD>")
+		if manager.IsLoggedIn("user1") {
+			t.Errorf("User sholdn't be logged in yet")
+		}
+		id, err1 := manager.Login("user1", "<PASSWORD>")
 		if err1 != nil {
 			t.Fatalf("Failed to login user: %s\nerror: %v", "user1", err1)
 		}
-		if manager.CurrentUser == nil {
+		if id != 0 {
+			t.Errorf("Returned user ID is wrong")
+		}
+		if len(manager.ActiveUsers) == 0 {
 			t.Fatalf("CurrentUser not initialized")
 		}
-		if manager.CurrentUser.Username != "user1" {
-			t.Errorf("CurrentUser not initialized correctly\nexpected username: user1, actual username: %s", manager.CurrentUser.Username)
+		if manager.ActiveUsers[0].User.Username != "user1" {
+			t.Errorf("CurrentUser not initialized correctly\nexpected username: user1, actual username: %s", manager.ActiveUsers[0].User.Username)
 		}
-		if manager.CurrentUser.UserID != 0 {
-			t.Errorf("CurrentUser not initialized correctly\nexpected user ID: 0, actual user ID: %d", manager.CurrentUser.UserID)
+		if manager.ActiveUsers[0].User.UserID != 0 {
+			t.Errorf("CurrentUser not initialized correctly\nexpected user ID: 0, actual user ID: %d", manager.ActiveUsers[0].User.UserID)
 		}
-		if manager.CurrentUser.AssignedDatabase != "usr0.db" {
-			t.Errorf("CurrentUser not initialized correctly\nexpected database: usr0.db, actual database: %s", manager.CurrentUser.AssignedDatabase)
+		if manager.ActiveUsers[0].User.AssignedDatabase != "usr0.db" {
+			t.Errorf("CurrentUser not initialized correctly\nexpected database: usr0.db, actual database: %s", manager.ActiveUsers[0].User.AssignedDatabase)
 		}
-		err2 := manager.Login("user1", "<PASSWORD>")
+		if !manager.IsLoggedIn("user1") {
+			t.Errorf("User should be logged in")
+		}
+		_, err2 := manager.Login("user1", "<PASSWORD>")
 		if err2 == nil {
 			t.Errorf("No error reported when logging in two times")
 		}
 	})
 	t.Run("Logout", func(t *testing.T) {
-		err := manager.Logout()
+		err := manager.Logout("user1")
 		if err != nil {
 			t.Fatalf("Failed to logout user\nerror: %v", err)
 		}
-		if manager.CurrentUser != nil {
+		if len(manager.ActiveUsers) != 0 {
 			t.Errorf("CurrentUser not cleared correctly")
-		}
-		if manager.DB != nil {
-			t.Errorf("DB not cleared correctly")
 		}
 	})
 	t.Run("ChangePassword", func(t *testing.T) {
-		err := manager.Login("user1", "<PASSWORD>")
+		_, err := manager.Login("user1", "<PASSWORD>")
 		if err != nil {
 			t.Fatalf("Failed to login user, error: %v", err)
 		}
-		err1 := manager.ChangePassword("<PASSWORD>", "Hello world!")
+		err1 := manager.ChangePassword("user1", "<PASSWORD>", "Hello world!")
 		if err1 != nil {
 			t.Fatalf("Failed to change password, error: %v", err1)
 		}
-		err3 := manager.Logout()
+		err3 := manager.Logout("user1")
 		if err3 != nil {
 			t.Fatalf("Failed to logout user, error: %v", err3)
 		}
-		err4 := manager.Login("user1", "Hello world!")
+		_, err4 := manager.Login("user1", "Hello world!")
 		if err4 != nil {
 			t.Errorf("Password hasn't been set to the specified value")
 		}
 	})
 	t.Run("Independence of user repositories", func(t *testing.T) {
-		err1 := manager.CreateItem("Sunglasses", "accessories", "black stylish sunglasses")
+		err1 := manager.CreateItem(0, "Sunglasses", "accessories", "black stylish sunglasses")
 		if err1 != nil {
 			t.Fatalf("Failed to create item, error: %v", err1)
 		}
-		err2 := manager.Logout()
+		err2 := manager.Logout("user1")
 		if err2 != nil {
 			t.Fatalf("Failed to logout user, error: %v", err2)
 		}
-		err3 := manager.Login("user2", "<PASSWORD>")
+		_, err3 := manager.Login("user2", "<PASSWORD>")
 		if err3 != nil {
 			t.Errorf("Password hasn't been set to the specified value")
 		}
-		item, err4 := manager.FindItemByName("Sunglasses")
+		item, err4 := manager.FindItemByName(1, "Sunglasses")
 		if err4 != nil {
 			t.Fatalf("Unexpected error: %v", err4)
 		}
 		if len(item) != 0 {
 			t.Errorf("Created item was found in user2's repository")
 		}
-		err5 := manager.Logout()
+		err5 := manager.Logout("user2")
 		if err5 != nil {
 			t.Fatalf("Failed to logout user, error: %v", err5)
 		}
-		err6 := manager.Login("user1", "Hello world!")
+		_, err6 := manager.Login("user1", "Hello world!")
 		if err6 != nil {
 			t.Errorf("Password hasn't been set to the specified value")
 		}
-		item2, err7 := manager.FindItemsByCategory("accessories")
+		item2, err7 := manager.FindItemsByCategory(0, "accessories")
 		if err7 != nil {
 			t.Fatalf("Error when retrieving item: %v", err7)
 		}
