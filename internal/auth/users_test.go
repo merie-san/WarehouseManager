@@ -17,10 +17,10 @@ type testUser struct {
 }
 
 func TestUserSessionManager(t *testing.T) {
-	var manager *AuthManager
-	t.Run("LoadUserManager", func(t *testing.T) {
+	var manager *AuthenticationManager
+	t.Run("LoadAuthManager", func(t *testing.T) {
 		var err1 error
-		manager, err1 = LoadUserManager(func(name string) (model.WarehouseRepository, error) {
+		manager, err1 = LoadAuthManager(func(name string) (model.WarehouseRepository, error) {
 			return model.NewGORMSQLiteWarehouseRepository(name)
 		})
 		if err1 != nil {
@@ -210,7 +210,7 @@ func TestUserSessionManager(t *testing.T) {
 		}
 		item2, err7 := manager.FindItemsByCategory(0, "accessories")
 		if err7 != nil {
-			t.Fatalf("Error when retrieving item: %v", err7)
+			t.Fatalf("APPError when retrieving item: %v", err7)
 		}
 		if len(item2) != 1 {
 			t.Errorf("Created item was not found in user1's repository")

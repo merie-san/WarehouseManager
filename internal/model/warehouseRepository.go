@@ -31,7 +31,7 @@ type Item struct {
 	Quantity    int            `gorm:"not null;default:0"`
 }
 
-// WarehouseItem is a struct used to create a model with GORM representing the many-to-many association between Items and Warehouses
+// WarehouseItem is a struct used to create a model with GORM representing the many-to-many association between Items and AllWarehouses
 type WarehouseItem struct {
 	ItemID      uint `gorm:"primaryKey"`
 	WarehouseID uint `gorm:"primaryKey"`
