@@ -179,6 +179,7 @@ func (manager *AuthenticationManager) Logout(username string) error {
 	return nil
 }
 
+// ShaHashing is used to encode passwords and generate session tokens
 func ShaHashing(input string) string {
 	plainText := []byte(input)
 	sha256Hash := sha256.Sum256(plainText)
@@ -203,12 +204,13 @@ func (manager *AuthenticationManager) Register(username string, password string)
 	return manager.Save()
 }
 
+// DeleteAllUsers is a method inteded to only be used in tests to clean up
 func (manager *AuthenticationManager) DeleteAllUsers() error {
 	manager.Users = []User{}
 	for _, v := range manager.ActiveUsers {
 		_ = v.DB.Close()
 	}
-	manager.ActiveUsers = nil
+	manager.ActiveUsers = make([]ActiveUser, 0)
 	return manager.Save()
 }
 

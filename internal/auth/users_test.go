@@ -35,10 +35,6 @@ func TestUserSessionManager(t *testing.T) {
 		}
 	})
 	t.Cleanup(func() {
-		for _, v := range manager.ActiveUsers {
-			_ = v.DB.Close()
-		}
-		manager.ActiveUsers = make([]ActiveUser, 0)
 		err := manager.DeleteAllUsers()
 		if err != nil {
 			t.Fatalf("Reported error: %v", err)

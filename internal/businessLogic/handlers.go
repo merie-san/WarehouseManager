@@ -1,4 +1,4 @@
-package handlersAndTemplates
+package businessLogic
 
 import (
 	"WarehouseManager/internal/auth"
@@ -7,6 +7,7 @@ import (
 	"errors"
 	"github.com/gorilla/mux"
 	"html/template"
+	"log"
 	"math/rand"
 	"net/http"
 	"regexp"
@@ -14,33 +15,50 @@ import (
 	"time"
 )
 
+// The various html files used in this project
 var htmlFiles = []string{
 	"account.html", "home.html", "login.html", "register.html", "warehouse.html", "warehouses.html", "items.html", "item.html",
 	"items_search.html", "warehouses_search.html", "not_found.html"}
+
+// We complete the file path by appending the "templates/" prefix and parse them to generate a template file
 var templates = template.Must(template.ParseFiles(func() (result []string) {
 	for _, file := range htmlFiles {
 		result = append(result, "templates/"+file)
 	}
 	return result
 }()...))
+
+// An instance of AuthenticationManager from the auth package
 var authManager, _ = auth.LoadAuthManager(func(name string) (model.WarehouseRepository, error) {
 	return model.NewGORMSQLiteWarehouseRepository(name)
 })
 
-var router = mux.NewRouter()
+// GetManager is a method only used for testing
+func GetManager() *auth.AuthenticationManager {
+	return authManager
+}
 
+// userSession allows the user to access the web APP until its expiration if not refreshed
 type userSession struct {
 	alias    string
 	id       uint
 	expireAt time.Time
 }
 
+// global variable to manage the sessions of clients
 var userSessions = map[string]userSession{}
 
+// SetSessions is a method used only for testing
+func SetSessions(sessions map[string]userSession) {
+	userSessions = sessions
+}
+
+// isExpired is an utility function to check if a session is expired or not
 func (s userSession) isExpired() bool {
 	return s.expireAt.Before(time.Now())
 }
 
+// Page represents the structure of a generic page of the web APP
 type Page struct {
 	// boolean expressing whether the user is logged in or not
 	LoggedIn bool
@@ -54,16 +72,19 @@ type Page struct {
 	LOError string
 }
 
+// WarehousesPage represents the particular page obtained by calling GET /warehouses
 type WarehousesPage struct {
 	Page
 	Content []model.Warehouse
 }
 
+// similar to WarehousesPage
 type ItemsPage struct {
 	Page
 	Content []model.Item
 }
 
+// ItemPage represents the particular page obtained by calling GET /item/{id:[0-9]+}
 type ItemPage struct {
 	Page
 	Item              model.Item
@@ -71,57 +92,67 @@ type ItemPage struct {
 	AllWarehouses     []model.Warehouse
 }
 
+// similar to ItemPage
 type WarehousePage struct {
 	Page
 	Warehouse model.Warehouse
 }
 
+// SearchPage display the result of a serching operation
 type SearchPage struct {
 	Page
 	Warehouses []model.Warehouse
 	Items      []model.Item
 }
 
-func SessionIsAbsentHomeHandler(nextHandler func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
+// Middleware for HomeHandler. It helps in showing the right messages in case of a access without login
+func SessionIsAbsentHomeHandler(nextHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		c, err := r.Cookie("session_token")
-		if err != nil {
-			if errors.Is(err, http.ErrNoCookie) {
-				err1 := templates.ExecuteTemplate(w, "templates/home.html", &Page{LoggedIn: false, AuthMsg: "Login to begin using the app!"})
+		if r.Method == http.MethodGet {
+			c, err := r.Cookie("session_token")
+			if err != nil {
+				if errors.Is(err, http.ErrNoCookie) {
+					err1 := templates.ExecuteTemplate(w, "home.html", &Page{LoggedIn: false, AuthMsg: "Login to begin using the app!"})
+					if err1 != nil {
+						http.Error(w, err1.Error(), http.StatusInternalServerError)
+					}
+					return
+				} else {
+					http.Error(w, "Bad request", http.StatusBadRequest)
+					return
+				}
+			}
+			session, ok := userSessions[c.Value]
+			if !ok || session.isExpired() {
+				err1 := templates.ExecuteTemplate(w, "home.html", &Page{LoggedIn: false, AuthMsg: "Previous session expired! Login again.!"})
 				if err1 != nil {
 					http.Error(w, err1.Error(), http.StatusInternalServerError)
 				}
 				return
-			} else {
-				http.Error(w, "Bad request", http.StatusBadRequest)
-				return
 			}
-		}
-		session, ok := userSessions[c.Value]
-		if !ok || session.isExpired() {
-			err1 := templates.ExecuteTemplate(w, "templates/home.html", &Page{LoggedIn: false, AuthMsg: "Previous session expired! Login again.!"})
-			if err1 != nil {
-				http.Error(w, err1.Error(), http.StatusInternalServerError)
-			}
+			nextHandler.ServeHTTP(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		nextHandler(w, r)
 	}
 }
 
+// HomeHandler displays the home page
 func HomeHandler(w http.ResponseWriter, r *http.Request) {
-	session := accessSession(w, r)
+	session, _ := accessSession(w, r)
 	var page Page
 	page.LoggedIn = true
 	page.AuthMsg = processFlashMessage(w, r, "flash")
 	page.LOError = processFlashMessage(w, r, "lOError")
 	page.APPMsg = evaluateItems(session)
-	err2 := templates.ExecuteTemplate(w, "templates/home.html", page)
+	err2 := templates.ExecuteTemplate(w, "home.html", page)
 	if err2 != nil {
 		http.Error(w, err2.Error(), http.StatusInternalServerError)
 	}
 }
 
+// evaluateItems crafts a message notifying the user if some items in the inventory are running out
 func evaluateItems(session userSession) string {
 	notification := "the following items are almost out of stock: "
 	resupply := false
@@ -141,7 +172,8 @@ func evaluateItems(session userSession) string {
 	return notification
 }
 
-func SessionIsAbsentRedirectHandler(nextHandler http.Handler) http.HandlerFunc {
+// SessionIsAbsentRedirectHandler Redirects the HTTP request to the login page if the user isn't logged in yet
+func SessionIsAbsentRedirectHandler(nextHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie("session_token")
 		if err != nil {
@@ -165,7 +197,8 @@ func SessionIsAbsentRedirectHandler(nextHandler http.Handler) http.HandlerFunc {
 	}
 }
 
-func RefreshHandler(nextHandler http.Handler) http.HandlerFunc {
+// RefreshHandler refreshes the session corresponding to the user making the request
+func RefreshHandler(nextHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, _ := r.Cookie("session_token")
 		oldAlias := userSessions[c.Value].alias
@@ -177,6 +210,7 @@ func RefreshHandler(nextHandler http.Handler) http.HandlerFunc {
 	}
 }
 
+// createNewSession allows for the creation of a new session object to substitute the old one
 func createNewSession(w http.ResponseWriter, alias string, userID uint) {
 	newSessionToken := base64.URLEncoding.EncodeToString([]byte(auth.ShaHashing(strconv.Itoa(rand.Intn(1000000)))))
 	newExpiration := time.Now().Add(time.Minute * 5)
@@ -192,118 +226,216 @@ func createNewSession(w http.ResponseWriter, alias string, userID uint) {
 	})
 }
 
+// ItemsHandler handlers operations on the /items page
 func ItemsHandler(w http.ResponseWriter, r *http.Request) {
-	session := accessSession(w, r)
-	var page ItemsPage
-	page.LoggedIn = true
-	page.LOError = processFlashMessage(w, r, "lOError")
-	items, err2 := authManager.ListAllItems(session.id)
-	if err2 != nil {
-		page.APPError = err2.Error()
-		err3 := templates.ExecuteTemplate(w, "templates/items.html", page)
-		if err3 != nil {
-			http.Error(w, err2.Error(), http.StatusInternalServerError)
+	if r.Method == http.MethodGet {
+		session, _ := accessSession(w, r)
+		var page ItemsPage
+		page.LoggedIn = true
+		page.LOError = processFlashMessage(w, r, "lOError")
+		items, err2 := authManager.ListAllItems(session.id)
+		if err2 != nil {
+			page.APPError = err2.Error()
+			err3 := templates.ExecuteTemplate(w, "items.html", page)
+			if err3 != nil {
+				http.Error(w, err2.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		page.APPError = processFlashMessage(w, r, "error")
+		page.Content = items
+		page.APPMsg = evaluateItems(session)
+		err4 := templates.ExecuteTemplate(w, "items.html", page)
+		if err4 != nil {
+			http.Error(w, err4.Error(), http.StatusInternalServerError)
 		}
 		return
+	} else if r.Method == http.MethodPost {
+		session, _ := accessSession(w, r)
+		itemName := r.FormValue("itemName")
+		itemCategory := r.FormValue("itemCategory")
+		itemDescription := r.FormValue("itemDescription")
+		createItem(w, r, session, itemName, itemCategory, itemDescription)
+		return
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-	page.APPError = processFlashMessage(w, r, "error")
-	page.Content = items
-	page.APPMsg = evaluateItems(session)
-	err4 := templates.ExecuteTemplate(w, "templates/items.html", page)
+}
+
+// createItem creates new items for the /items page
+func createItem(w http.ResponseWriter, r *http.Request, session userSession, itemName string, itemCategory string, itemDescription string) {
+	err3 := authManager.CreateItem(session.id, itemName, itemCategory, itemDescription)
+	if err3 != nil {
+		setFlashMessage(w, "error", err3.Error())
+		http.Redirect(w, r, "/items", http.StatusFound)
+		return
+	}
+	item, err4 := authManager.FindItemByName(session.id, itemName)
 	if err4 != nil {
 		http.Error(w, err4.Error(), http.StatusInternalServerError)
+		return
 	}
+	if len(item) == 0 {
+		http.Error(w, "Newly created item not found", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/item/"+strconv.Itoa(int(item[0].ID)), http.StatusFound)
 	return
 }
 
+// WarehousesHandler handlers the operations on the /warehouses page
 func WarehousesHandler(w http.ResponseWriter, r *http.Request) {
-	var page WarehousesPage
-	page.LoggedIn = true
-	page.LOError = processFlashMessage(w, r, "lOError")
-	session := accessSession(w, r)
-	warehouses, err1 := authManager.ListAllWarehouses(session.id)
-	if err1 != nil {
-		page.APPError = err1.Error()
-		err2 := templates.ExecuteTemplate(w, "templates/warehouses.html", page)
+	if r.Method == http.MethodGet {
+		var page WarehousesPage
+		page.LoggedIn = true
+		page.LOError = processFlashMessage(w, r, "lOError")
+		session, _ := accessSession(w, r)
+		warehouses, err1 := authManager.ListAllWarehouses(session.id)
+		if err1 != nil {
+			page.APPError = err1.Error()
+			err2 := templates.ExecuteTemplate(w, "warehouses.html", page)
+			if err2 != nil {
+				http.Error(w, err2.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		page.Content = warehouses
+		err2 := templates.ExecuteTemplate(w, "warehouses.html", page)
 		if err2 != nil {
 			http.Error(w, err2.Error(), http.StatusInternalServerError)
 		}
 		return
+	} else if r.Method == http.MethodPost {
+		session, _ := accessSession(w, r)
+		warehouseName := r.FormValue("warehouseName")
+		warehousePosition := r.FormValue("warehousePosition")
+		warehouseCapacity, err4 := strconv.Atoi(r.FormValue("warehouseCapacity"))
+		if err4 != nil {
+			http.Error(w, err4.Error(), http.StatusInternalServerError)
+		}
+		createWarehouse(w, r, session, warehouseName, warehousePosition, warehouseCapacity)
+		return
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
 	}
-	page.Content = warehouses
-	err2 := templates.ExecuteTemplate(w, "templates/warehouses.html", page)
+}
+
+// createWarehouse creates a new warehouse in the /warehouses page
+func createWarehouse(w http.ResponseWriter, r *http.Request, session userSession, warehouseName string, warehousePosition string, warehouseCapacity int) {
+	err2 := authManager.CreateWarehouse(session.id, warehouseName, warehousePosition, warehouseCapacity)
 	if err2 != nil {
-		http.Error(w, err2.Error(), http.StatusInternalServerError)
+		setFlashMessage(w, "error", err2.Error())
+		http.Redirect(w, r, "/warehouses", http.StatusFound)
+		return
 	}
+	warehouse, err3 := authManager.FindWarehouseByName(session.id, warehouseName)
+	if err3 != nil {
+		http.Error(w, err3.Error(), http.StatusInternalServerError)
+		return
+	}
+	if len(warehouse) == 0 {
+		http.Error(w, "Newly created warehouse not found", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/warehouse/"+strconv.Itoa(int(warehouse[0].ID)), http.StatusFound)
 	return
 }
 
+// ConsumeItemHandler implements the consumption of items in a certain warehouse through the /item/{id:[0-9]+} page
 func ConsumeItemHandler(w http.ResponseWriter, r *http.Request) {
-	session, amount, itemID := collectData(w, r)
-	warehouseID, err2 := strconv.Atoi(r.FormValue("warehouseID"))
-	if err2 != nil {
-		http.Error(w, err2.Error(), http.StatusInternalServerError)
-	}
-	err := authManager.ConsumeItems(session.id, uint(itemID), uint(warehouseID), amount)
-	if err != nil {
-		setFlashMessage(w, "error", err.Error())
-		http.Redirect(w, r, "/item/"+mux.Vars(r)["itemID"], http.StatusFound)
+	if r.Method == http.MethodPost {
+		session, amount, itemID := collectData(w, r)
+		warehouseID, err2 := strconv.Atoi(r.FormValue("warehouseID"))
+		if err2 != nil {
+			http.Error(w, err2.Error(), http.StatusInternalServerError)
+			return
+		}
+		err := authManager.ConsumeItems(session.id, uint(itemID), uint(warehouseID), amount)
+		if err != nil {
+			setFlashMessage(w, "error", err.Error())
+			http.Redirect(w, r, "/item/"+mux.Vars(r)["itemID"], http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/items", http.StatusFound)
+		return
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	http.Redirect(w, r, "/items", http.StatusFound)
-	return
 }
 
+// SupplyItemHandler similar to ConsumeItemHandler
 func SupplyItemHandler(w http.ResponseWriter, r *http.Request) {
-	session, amount, itemID := collectData(w, r)
-	warehouseID, err2 := strconv.Atoi(r.FormValue("warehouseID"))
-	if err2 != nil {
-		http.Error(w, err2.Error(), http.StatusInternalServerError)
-	}
-	err := authManager.SupplyItems(session.id, uint(itemID), uint(warehouseID), amount)
-	if err != nil {
-		setFlashMessage(w, "error", err.Error())
-		http.Redirect(w, r, "/item/"+mux.Vars(r)["itemID"], http.StatusFound)
+	if r.Method == http.MethodPost {
+		session, amount, itemID := collectData(w, r)
+		warehouseID, err2 := strconv.Atoi(r.FormValue("warehouseID"))
+		if err2 != nil {
+			http.Error(w, err2.Error(), http.StatusInternalServerError)
+			return
+		}
+		err := authManager.SupplyItems(session.id, uint(itemID), uint(warehouseID), amount)
+		if err != nil {
+			setFlashMessage(w, "error", err.Error())
+			http.Redirect(w, r, "/item/"+mux.Vars(r)["itemID"], http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/items", http.StatusFound)
+		return
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	http.Redirect(w, r, "/items", http.StatusFound)
-	return
 }
 
+// collectData is a utility function to collect data
 func collectData(w http.ResponseWriter, r *http.Request) (rSession userSession, rAmount int, rItemID int) {
-	session := accessSession(w, r)
+	session, _ := accessSession(w, r)
 	amount, err1 := strconv.Atoi(r.FormValue("amount"))
 	if err1 != nil {
 		http.Error(w, err1.Error(), http.StatusInternalServerError)
+		return
 	}
 	itemID, err3 := strconv.Atoi(mux.Vars(r)["itemID"])
 	if err3 != nil {
 		http.Error(w, err3.Error(), http.StatusInternalServerError)
+		return
 	}
 	return session, amount, itemID
 }
 
+// TransferItemHandler transfers items from a warehouse to another. It's accessible from /item/{id}/transfer path
 func TransferItemHandler(w http.ResponseWriter, r *http.Request) {
-	session, amount, itemID := collectData(w, r)
-	srcID, err1 := strconv.Atoi(r.FormValue("srcID"))
-	if err1 != nil {
-		http.Error(w, err1.Error(), http.StatusInternalServerError)
-	}
-	destID, err2 := strconv.Atoi(r.FormValue("destID"))
-	if err2 != nil {
-		http.Error(w, err2.Error(), http.StatusInternalServerError)
-	}
-	err3 := authManager.TransferItems(session.id, uint(itemID), uint(srcID), amount, uint(destID))
-	if err3 != nil {
-		setFlashMessage(w, "error", err3.Error())
-		http.Redirect(w, r, "/item/"+mux.Vars(r)["itemID"], http.StatusFound)
+	if r.Method == http.MethodPost {
+		session, amount, itemID := collectData(w, r)
+		srcID, err1 := strconv.Atoi(r.FormValue("srcID"))
+		if err1 != nil {
+			http.Error(w, err1.Error(), http.StatusInternalServerError)
+			return
+		}
+		destID, err2 := strconv.Atoi(r.FormValue("destID"))
+		if err2 != nil {
+			http.Error(w, err2.Error(), http.StatusInternalServerError)
+			return
+		}
+		err3 := authManager.TransferItems(session.id, uint(itemID), uint(srcID), amount, uint(destID))
+		if err3 != nil {
+			setFlashMessage(w, "error", err3.Error())
+			http.Redirect(w, r, "/item/"+mux.Vars(r)["itemID"], http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/items", http.StatusFound)
+		return
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	http.Redirect(w, r, "/items", http.StatusFound)
 }
 
+// ItemHandler handlers the operations on the /item/{id} page
 func ItemHandler(w http.ResponseWriter, r *http.Request) {
-	session := accessSession(w, r)
+	session, _ := accessSession(w, r)
 	vars := mux.Vars(r)
 	itemIDStr := vars["itemID"]
 	itemID, err1 := strconv.Atoi(itemIDStr)
@@ -321,7 +453,6 @@ func ItemHandler(w http.ResponseWriter, r *http.Request) {
 		{
 			putItem(w, r, session, itemID)
 			return
-
 		}
 	case http.MethodDelete:
 		{
@@ -336,6 +467,7 @@ func ItemHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// deleteItem allows for the elimination of items from the /item page
 func deleteItem(w http.ResponseWriter, r *http.Request, session userSession, itemID int) {
 	err2 := authManager.DeleteItem(session.id, uint(itemID))
 	if err2 != nil {
@@ -347,6 +479,7 @@ func deleteItem(w http.ResponseWriter, r *http.Request, session userSession, ite
 	return
 }
 
+// putItem allows for the modification of items from the corresponding /item page
 func putItem(w http.ResponseWriter, r *http.Request, session userSession, itemID int) {
 	itemName := r.FormValue("itemName")
 	itemCategory := r.FormValue("itemCategory")
@@ -357,10 +490,7 @@ func putItem(w http.ResponseWriter, r *http.Request, session userSession, itemID
 		http.Error(w, err4.Error(), http.StatusInternalServerError)
 		return
 	}
-	if referer == "/items" {
-		createItem(w, r, session, itemID, itemName, itemCategory, itemDescription)
-		return
-	} else if match {
+	if match {
 		updateItem(w, r, session, itemID, itemName, itemCategory, itemDescription)
 		return
 	}
@@ -368,6 +498,7 @@ func putItem(w http.ResponseWriter, r *http.Request, session userSession, itemID
 	return
 }
 
+// utility method extracted to increase code readability
 func updateItem(w http.ResponseWriter, r *http.Request, session userSession, itemID int, itemName string, itemCategory string, itemDescription string) {
 	_, err2 := authManager.FindItemByID(session.id, uint(itemID))
 	if err2 != nil {
@@ -384,17 +515,7 @@ func updateItem(w http.ResponseWriter, r *http.Request, session userSession, ite
 	return
 }
 
-func createItem(w http.ResponseWriter, r *http.Request, session userSession, itemID int, itemName string, itemCategory string, itemDescription string) {
-	err3 := authManager.CreateItem(session.id, itemName, itemCategory, itemDescription)
-	if err3 != nil {
-		setFlashMessage(w, "error", err3.Error())
-		http.Redirect(w, r, "/items", http.StatusFound)
-		return
-	}
-	http.Redirect(w, r, "/item/"+strconv.Itoa(itemID), http.StatusFound)
-	return
-}
-
+// getItem shows the corresponding /item/{id} page
 func getItem(w http.ResponseWriter, r *http.Request, session userSession, itemID int) {
 	item, err2 := authManager.FindItemByID(session.id, uint(itemID))
 	if err2 != nil {
@@ -402,13 +523,14 @@ func getItem(w http.ResponseWriter, r *http.Request, session userSession, itemID
 		return
 	}
 	page := fillPage(w, r, session, itemID, item)
-	err3 := templates.ExecuteTemplate(w, "templates/item.html", page)
+	err3 := templates.ExecuteTemplate(w, "item.html", page)
 	if err3 != nil {
 		http.Error(w, err3.Error(), http.StatusInternalServerError)
 	}
 	return
 }
 
+// collects data and fills the page struct
 func fillPage(w http.ResponseWriter, r *http.Request, session userSession, itemID int, item model.Item) ItemPage {
 	hostingWarehouses, err1 := findHostingWarehouses(w, session, itemID)
 	allWarehouses, err2 := authManager.ListAllWarehouses(session.id)
@@ -428,6 +550,7 @@ func fillPage(w http.ResponseWriter, r *http.Request, session userSession, itemI
 	return page
 }
 
+// utility method to find which warehouses hosts the given item
 func findHostingWarehouses(w http.ResponseWriter, session userSession, itemID int) ([]model.Warehouse, error) {
 	warehousePacks, err := authManager.FindWarehousesForItem(session.id, uint(itemID))
 	hostWarehouses := make([]model.Warehouse, 0)
@@ -441,8 +564,9 @@ func findHostingWarehouses(w http.ResponseWriter, session userSession, itemID in
 	return hostWarehouses, err
 }
 
+// handlers the Warehouse page
 func WarehouseHandler(w http.ResponseWriter, r *http.Request) {
-	session := accessSession(w, r)
+	session, _ := accessSession(w, r)
 	vars := mux.Vars(r)
 	warehouseIDStr := vars["warehouseID"]
 	warehouseID, err1 := strconv.Atoi(warehouseIDStr)
@@ -460,7 +584,6 @@ func WarehouseHandler(w http.ResponseWriter, r *http.Request) {
 		{
 			putWarehouse(w, r, session, warehouseID)
 			return
-
 		}
 	case http.MethodDelete:
 		{
@@ -474,6 +597,7 @@ func WarehouseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// deletes a given warehouse by id
 func deleteWarehouse(w http.ResponseWriter, r *http.Request, session userSession, warehouseID int) {
 	err2 := authManager.DeleteWarehouse(session.id, uint(warehouseID))
 	if err2 != nil {
@@ -485,20 +609,22 @@ func deleteWarehouse(w http.ResponseWriter, r *http.Request, session userSession
 	return
 }
 
+// updates the info about a warehouse given its id
 func putWarehouse(w http.ResponseWriter, r *http.Request, session userSession, warehouseID int) {
 	warehouseName := r.FormValue("warehouseName")
 	warehousePosition := r.FormValue("warehousePosition")
 	warehouseCapacity, err4 := strconv.Atoi(r.FormValue("warehouseCapacity"))
+	if err4 != nil {
+		http.Error(w, err4.Error(), http.StatusInternalServerError)
+		return
+	}
 	referer := r.Header.Get("Referer")
 	match, err2 := regexp.Match("/warehouse/[0-9]+", []byte(referer))
 	if err2 != nil {
 		http.Error(w, err2.Error(), http.StatusInternalServerError)
 		return
 	}
-	if referer == "/warehouses" {
-		createWarehouse(w, r, session, warehouseID, err4, warehouseName, warehousePosition, warehouseCapacity)
-		return
-	} else if match {
+	if match {
 		updateWarehouse(w, r, session, warehouseID, warehouseName, warehousePosition, warehouseCapacity)
 		return
 	}
@@ -506,6 +632,7 @@ func putWarehouse(w http.ResponseWriter, r *http.Request, session userSession, w
 	return
 }
 
+// utility method extracted from putWarehouse
 func updateWarehouse(w http.ResponseWriter, r *http.Request, session userSession, warehouseID int, warehouseName string, warehousePosition string, warehouseCapacity int) {
 	_, err3 := authManager.FindWarehouseByID(session.id, uint(warehouseID))
 	if err3 != nil {
@@ -522,21 +649,7 @@ func updateWarehouse(w http.ResponseWriter, r *http.Request, session userSession
 	return
 }
 
-func createWarehouse(w http.ResponseWriter, r *http.Request, session userSession, warehouseID int, err4 error, warehouseName string, warehousePosition string, warehouseCapacity int) {
-	if err4 != nil {
-		http.Error(w, err4.Error(), http.StatusInternalServerError)
-		return
-	}
-	err3 := authManager.CreateWarehouse(session.id, warehouseName, warehousePosition, warehouseCapacity)
-	if err3 != nil {
-		setFlashMessage(w, "error", err3.Error())
-		http.Redirect(w, r, "/warehouses", http.StatusFound)
-		return
-	}
-	http.Redirect(w, r, "/warehouse/"+strconv.Itoa(warehouseID), http.StatusFound)
-	return
-}
-
+// getWarehouse shows the warehouse page
 func getWarehouse(w http.ResponseWriter, r *http.Request, session userSession, warehouseID int) {
 	warehouse, err2 := authManager.FindWarehouseByID(session.id, uint(warehouseID))
 	if err2 != nil {
@@ -548,7 +661,7 @@ func getWarehouse(w http.ResponseWriter, r *http.Request, session userSession, w
 	page.APPError = processFlashMessage(w, r, "error")
 	page.LOError = processFlashMessage(w, r, "lOError")
 	page.Warehouse = warehouse
-	err3 := templates.ExecuteTemplate(w, "templates/warehouse.html", page)
+	err3 := templates.ExecuteTemplate(w, "warehouse.html", page)
 	if err3 != nil {
 		http.Error(w, err3.Error(), http.StatusInternalServerError)
 		return
@@ -556,6 +669,7 @@ func getWarehouse(w http.ResponseWriter, r *http.Request, session userSession, w
 	return
 }
 
+// operates the search page
 func ItemsSearchHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -575,10 +689,11 @@ func ItemsSearchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// allows for the research of items by id name or keyword
 func searchItem(w http.ResponseWriter, r *http.Request) {
 	var page SearchPage
 	page.LoggedIn = true
-	session := accessSession(w, r)
+	session, _ := accessSession(w, r)
 	itemIDStr := r.FormValue("itemID")
 	itemName := r.FormValue("itemName")
 	itemCategory := r.FormValue("itemCategory")
@@ -601,6 +716,7 @@ func searchItem(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+// searches item by category
 func searchItemCategory(w http.ResponseWriter, r *http.Request, session userSession, itemCategory string, page SearchPage) {
 	resItems, err1 := authManager.FindItemsByCategory(session.id, itemCategory)
 	if err1 != nil {
@@ -609,7 +725,7 @@ func searchItemCategory(w http.ResponseWriter, r *http.Request, session userSess
 		return
 	}
 	page.Items = resItems
-	err := templates.ExecuteTemplate(w, "templates/items_search.html", page)
+	err := templates.ExecuteTemplate(w, "items_search.html", page)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -617,6 +733,7 @@ func searchItemCategory(w http.ResponseWriter, r *http.Request, session userSess
 	return
 }
 
+// extracted method to improve readability
 func searchItemKeyword(w http.ResponseWriter, r *http.Request, session userSession, itemDescription string, itemCategory string, page SearchPage) {
 	resItems, err1 := authManager.FindItemsByKeyword(session.id, itemDescription)
 	if err1 != nil {
@@ -634,7 +751,7 @@ func searchItemKeyword(w http.ResponseWriter, r *http.Request, session userSessi
 		resItems = temp
 	}
 	page.Items = resItems
-	err2 := templates.ExecuteTemplate(w, "templates/items_search.html", page)
+	err2 := templates.ExecuteTemplate(w, "items_search.html", page)
 	if err2 != nil {
 		http.Error(w, err2.Error(), http.StatusInternalServerError)
 		return
@@ -642,6 +759,7 @@ func searchItemKeyword(w http.ResponseWriter, r *http.Request, session userSessi
 	return
 }
 
+// like before
 func searchItemName(w http.ResponseWriter, r *http.Request, session userSession, itemName string, page SearchPage) {
 	resItem, err1 := authManager.FindItemByName(session.id, itemName)
 	if err1 != nil {
@@ -650,7 +768,7 @@ func searchItemName(w http.ResponseWriter, r *http.Request, session userSession,
 		return
 	}
 	page.Items = resItem
-	err2 := templates.ExecuteTemplate(w, "templates/items_search.html", page)
+	err2 := templates.ExecuteTemplate(w, "items_search.html", page)
 	if err2 != nil {
 		http.Error(w, err2.Error(), http.StatusInternalServerError)
 		return
@@ -658,6 +776,7 @@ func searchItemName(w http.ResponseWriter, r *http.Request, session userSession,
 	return
 }
 
+// like before
 func searchItemID(w http.ResponseWriter, r *http.Request, itemIDStr string, session userSession, page SearchPage) {
 	itemID, err1 := strconv.Atoi(itemIDStr)
 	if err1 != nil {
@@ -671,7 +790,7 @@ func searchItemID(w http.ResponseWriter, r *http.Request, itemIDStr string, sess
 		return
 	}
 	page.Items = append(page.Items, resItem)
-	err := templates.ExecuteTemplate(w, "templates/items_search.html", page)
+	err := templates.ExecuteTemplate(w, "items_search.html", page)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -679,18 +798,20 @@ func searchItemID(w http.ResponseWriter, r *http.Request, itemIDStr string, sess
 	return
 }
 
+// processes and presents the page for item searching
 func getItemSearchPage(w http.ResponseWriter, r *http.Request) {
 	var page Page
 	page.LoggedIn = true
 	page.APPError = processFlashMessage(w, r, "error")
 	page.LOError = processFlashMessage(w, r, "lOError")
-	err := templates.ExecuteTemplate(w, "templates/items_search.html", page)
+	err := templates.ExecuteTemplate(w, "items_search.html", page)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 	return
 }
 
+// WarehousesSearchHandler manages the requests on the /warehouses/search path
 func WarehousesSearchHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -713,7 +834,7 @@ func WarehousesSearchHandler(w http.ResponseWriter, r *http.Request) {
 func searchWarehouse(w http.ResponseWriter, r *http.Request) {
 	var page SearchPage
 	page.LoggedIn = true
-	session := accessSession(w, r)
+	session, _ := accessSession(w, r)
 	warehouseIDStr := r.FormValue("warehouseID")
 	warehouseName := r.FormValue("warehouseName")
 	warehousePosition := r.FormValue("warehousePosition")
@@ -740,7 +861,7 @@ func searchWarehousePosition(w http.ResponseWriter, r *http.Request, session use
 		return
 	}
 	page.Warehouses = resWarehouses
-	err2 := templates.ExecuteTemplate(w, "templates/warehouses_search.html", page)
+	err2 := templates.ExecuteTemplate(w, "warehouses_search.html", page)
 	if err2 != nil {
 		http.Error(w, err2.Error(), http.StatusInternalServerError)
 	}
@@ -755,7 +876,7 @@ func searchWarehouseName(w http.ResponseWriter, r *http.Request, session userSes
 		return
 	}
 	page.Warehouses = resWarehouse
-	err2 := templates.ExecuteTemplate(w, "templates/warehouses_search.html", page)
+	err2 := templates.ExecuteTemplate(w, "warehouses_search.html", page)
 	if err2 != nil {
 		http.Error(w, err2.Error(), http.StatusInternalServerError)
 		return
@@ -776,7 +897,7 @@ func searchWarehouseID(w http.ResponseWriter, r *http.Request, warehouseIDStr st
 		return
 	}
 	page.Warehouses = append(page.Warehouses, warehouse)
-	err := templates.ExecuteTemplate(w, "templates/warehouses_search.html", page)
+	err := templates.ExecuteTemplate(w, "warehouses_search.html", page)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -789,32 +910,35 @@ func getWarehouseSearchPage(w http.ResponseWriter, r *http.Request) {
 	page.LoggedIn = true
 	page.APPError = processFlashMessage(w, r, "error")
 	page.LOError = processFlashMessage(w, r, "lOError")
-	err := templates.ExecuteTemplate(w, "templates/warehouses_search.html", page)
+	err := templates.ExecuteTemplate(w, "warehouses_search.html", page)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 	return
 }
 
+// Implements the default behaviour of the wab APP when dealing with invalid URLs
 func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
-	err := templates.ExecuteTemplate(w, "templates/notfound.html", nil)
+	err := templates.ExecuteTemplate(w, "not_found.html", r.URL)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 	return
 }
 
-func accessSession(w http.ResponseWriter, r *http.Request) userSession {
+// utility method to quickly get the session_token of the client
+func accessSession(w http.ResponseWriter, r *http.Request) (session userSession, ok bool) {
 	c1, err1 := r.Cookie("session_token")
 	if err1 != nil && !errors.Is(err1, http.ErrNoCookie) {
 		http.Error(w, err1.Error(), http.StatusBadRequest)
 	}
-	session, _ := userSessions[c1.Value]
-	return session
+	session, ok = userSessions[c1.Value]
+	return
 }
 
-func SessionIsPresentHandler(nextHandler func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
+// SessionIsPresentHandler wraps around the login and register pages to redirect requests by users who are already logged in
+func SessionIsPresentHandler(nextHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie("session_token")
 		if err == nil {
@@ -832,23 +956,38 @@ func SessionIsPresentHandler(nextHandler func(w http.ResponseWriter, r *http.Req
 	}
 }
 
-func RegisterPageHandler(w http.ResponseWriter, r *http.Request) {
-	message := processFlashMessage(w, r, "error")
-	err := templates.ExecuteTemplate(w, "templates/register.html", &Page{APPError: message})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
-	message := processFlashMessage(w, r, "error")
-	err := templates.ExecuteTemplate(w, "templates/login.html", &Page{APPError: message})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
+// allows for the registration of users
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		{
+			postRegister(w, r)
+			return
+		}
+	case http.MethodGet:
+		{
+			getRegister(w, r)
+			return
+		}
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+}
+
+// manages GET requests to the /register resource
+func getRegister(w http.ResponseWriter, r *http.Request) {
+	message := processFlashMessage(w, r, "error")
+	err := templates.ExecuteTemplate(w, "register.html", &Page{APPError: message})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	return
+}
+
+// manages the POST requests to the /register resource. Register users.
+func postRegister(w http.ResponseWriter, r *http.Request) {
 	newUsername := r.FormValue("newUsername")
 	newPassword1 := r.FormValue("newPassword1")
 	newPassword2 := r.FormValue("newPassword2")
@@ -856,23 +995,57 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		setFlashMessage(w, "error", "The passwords don't match")
 		http.Redirect(w, r, "/register", http.StatusFound)
 		return
-	} else {
-		err := authManager.Register(newUsername, newPassword1)
-		if err != nil {
-			setFlashMessage(w, "error", err.Error())
-			http.Redirect(w, r, "/register", http.StatusFound)
-			return
-		}
-		http.Redirect(w, r, "/login", http.StatusFound)
+	}
+	err := authManager.Register(newUsername, newPassword1)
+	if err != nil {
+		setFlashMessage(w, "error", err.Error())
+		http.Redirect(w, r, "/register", http.StatusFound)
 		return
 	}
+	http.Redirect(w, r, "/login", http.StatusFound)
+	return
 }
 
+// operates the /login page
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		{
+			postLogin(w, r)
+			return
+		}
+	case http.MethodGet:
+		{
+			getLogin(w, r)
+			return
+		}
+	default:
+		{
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	}
+
+}
+
+// manages the GET requests
+func getLogin(w http.ResponseWriter, r *http.Request) {
+	message := processFlashMessage(w, r, "error")
+	err := templates.ExecuteTemplate(w, "login.html", &Page{APPError: message})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	return
+}
+
+// manages the POST requests by logging in the user.
+func postLogin(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	userID, err := authManager.Login(username, password)
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		setFlashMessage(w, "error", err.Error())
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
@@ -882,32 +1055,39 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+// logs the user out
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {
-	session, done := checkForActiveSession(w, r)
-	if done {
-		return
-	}
-	err1 := authManager.Logout(session.alias)
-	if err1 != nil {
-		setFlashMessage(w, "lOError", err1.Error())
-		referer := r.Header.Get("Referer")
-		if referer == "" {
-			http.Redirect(w, r, "/", http.StatusFound)
+	if r.Method == http.MethodPost {
+		session, done := checkForActiveSession(w, r)
+		if done {
 			return
 		}
-		http.Redirect(w, r, referer, http.StatusFound)
+		err1 := authManager.Logout(session.alias)
+		if err1 != nil {
+			setFlashMessage(w, "lOError", err1.Error())
+			referer := r.Header.Get("Referer")
+			if referer == "" {
+				http.Redirect(w, r, "/", http.StatusFound)
+				return
+			}
+			http.Redirect(w, r, referer, http.StatusFound)
+			return
+		}
+		newC := http.Cookie{
+			Name:    "session_token",
+			Value:   "",
+			Expires: time.Now(),
+		}
+		http.SetCookie(w, &newC)
+		http.Redirect(w, r, "/home", http.StatusFound)
+		return
+	} else {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	newC := http.Cookie{
-		Name:    "session_token",
-		Value:   "",
-		Expires: time.Now(),
-	}
-	http.SetCookie(w, &newC)
-	http.Redirect(w, r, "/home", http.StatusFound)
-	return
 }
 
+// capture cookies and eliminates them
 func processFlashMessage(w http.ResponseWriter, r *http.Request, cookieName string) string {
 	c2, err2 := r.Cookie(cookieName)
 	if err2 != nil {
@@ -931,6 +1111,7 @@ func processFlashMessage(w http.ResponseWriter, r *http.Request, cookieName stri
 	return ""
 }
 
+// creates new cookies
 func setFlashMessage(w http.ResponseWriter, name string, value string) {
 	cookie := http.Cookie{
 		Name:  name,
@@ -939,6 +1120,7 @@ func setFlashMessage(w http.ResponseWriter, name string, value string) {
 	http.SetCookie(w, &cookie)
 }
 
+// check if the user has an active session on the web APP and returns it.
 func checkForActiveSession(w http.ResponseWriter, r *http.Request) (userSession, bool) {
 	c, err := r.Cookie("session_token")
 	if err != nil {
@@ -952,12 +1134,13 @@ func checkForActiveSession(w http.ResponseWriter, r *http.Request) (userSession,
 	}
 	session, ok := userSessions[c.Value]
 	if !ok || session.isExpired() {
-		http.Error(w, "No active session found", http.StatusBadRequest)
+		http.Error(w, "Expired or wrong session found", http.StatusBadRequest)
 		return userSession{}, true
 	}
 	return session, false
 }
 
+// deletes expired userSessions from the environment
 func ManageUserSessions() {
 	time.Sleep(30 * time.Second)
 	expiredK := make([]string, 0)
@@ -973,4 +1156,38 @@ func ManageUserSessions() {
 		}
 		delete(userSessions, k)
 	}
+}
+
+// Runs the APP
+func RunAPP() {
+	router := BuildAPPRouter()
+	srv := &http.Server{
+		Handler:      router,
+		Addr:         "127.0.0.1:8080",
+		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  30 * time.Second,
+	}
+	go ManageUserSessions()
+	log.Fatal(srv.ListenAndServe())
+}
+
+// uses gorilla mux to route the requests to the corresponding handler
+func BuildAPPRouter() *mux.Router {
+	router := mux.NewRouter()
+	router.HandleFunc("/", SessionIsAbsentHomeHandler(HomeHandler))
+	router.HandleFunc("/home", SessionIsAbsentHomeHandler(HomeHandler))
+	router.HandleFunc("/login", SessionIsPresentHandler(LoginHandler))
+	router.HandleFunc("/register", SessionIsPresentHandler(RegisterHandler))
+	router.HandleFunc("/logout", LogoutHandler)
+	router.HandleFunc("/items", SessionIsAbsentRedirectHandler(RefreshHandler(ItemsHandler)))
+	router.HandleFunc("/warehouses", SessionIsAbsentRedirectHandler(RefreshHandler(WarehousesHandler)))
+	router.HandleFunc("/item/{itemID:[0-9]+}", SessionIsAbsentRedirectHandler(RefreshHandler(ItemHandler)))
+	router.HandleFunc("/warehouse/{warehouseID:[0-9]+}", SessionIsAbsentRedirectHandler(RefreshHandler(WarehouseHandler)))
+	router.HandleFunc("/items/search", SessionIsAbsentRedirectHandler(RefreshHandler(ItemsSearchHandler)))
+	router.HandleFunc("/warehouses/search", SessionIsAbsentRedirectHandler(RefreshHandler(WarehousesSearchHandler)))
+	router.HandleFunc("/item/{itemID:[0-9]+}/supply", SessionIsAbsentRedirectHandler(RefreshHandler(SupplyItemHandler)))
+	router.HandleFunc("/item/{itemID:[0-9]+}/consume", SessionIsAbsentRedirectHandler(RefreshHandler(ConsumeItemHandler)))
+	router.HandleFunc("/item/{itemID:[0-9]+}/transfer", SessionIsAbsentRedirectHandler(RefreshHandler(TransferItemHandler)))
+	router.NotFoundHandler = http.HandlerFunc(NotFoundHandler)
+	return router
 }
