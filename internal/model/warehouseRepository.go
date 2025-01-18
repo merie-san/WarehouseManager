@@ -185,9 +185,13 @@ func (r *GORMSQLiteWarehouseRepository) UpdateWarehouse(warehouseID uint, name s
 	if err != nil {
 		return err
 	}
-	warehouse.Name = name
-	warehouse.Capacity = capacity
-	warehouse.Position = position
+	if warehouse.Capacity <= capacity {
+		warehouse.Name = name
+		warehouse.Capacity = capacity
+		warehouse.Position = position
+	} else {
+		return errors.New("cannot downgrade the capacity of a warehouse")
+	}
 	return r.DB.Save(&warehouse).Error
 }
 

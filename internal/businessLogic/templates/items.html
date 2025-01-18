@@ -5,6 +5,31 @@
     <title>Items page</title>
 </head>
 <body>
-
+<nav>
+    {{template "navbar" .}}
+    {{template "notifications" .}}
+</nav>
+<h1>View, create and delete your items here!</h1>
+<h2>Delete your items and view their pages here!</h2>
+{{range .Content}}
+    <a href="/item/{{.ID}}">item "{{.Name}}"</a>
+    <form action="/item/{{.ID}}" method="DELETE">
+        <button type="submit">Delete</button>
+    </form>
+{{else}}
+    No items present in repository
+{{end}}
+<h2>Create new items here!</h2>
+<form action="/items" method="POST">
+    <label for="itemName">Name:</label><br>
+    <input type="text" id="itemName" name="itemName" required> <br><br>
+    <label for="itemCategory">Category:</label><br>
+    <input type="text" id="itemCategory" name="itemCategory" required>
+    <br><br>
+    <label for="itemDescription">Description:</label><br>
+    <textarea id="itemDescription" name="itemDescription" rows="20" cols="60" required></textarea>
+    <br><br>
+    <button type="submit">Create</button>
+</form>
 </body>
 </html>

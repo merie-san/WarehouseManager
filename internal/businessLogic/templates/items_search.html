@@ -5,6 +5,28 @@
     <title>Items search page</title>
 </head>
 <body>
-
+<nav>
+    {{template "navbar" .}}
+    {{template "notifications" .}}
+</nav>
+<h1>Search for items and view your search results here!</h1>
+<h2>Search for items here!</h2>
+<form method="POST" action="/items/search">
+    <label for="itemID">item ID</label><br>
+    <input type="number" name="itemID" id="itemID"><br>
+    <label for="itemName">item name</label><br>
+    <input type="text" name="itemName" id="itemName"><br>
+    <label for="itemCategory">item category</label><br>
+    <input type="text" name="itemCategory" id="itemCategory"><br>
+    <label for="itemDescription">keyword</label><br>
+    <input type="text" name="itemDescription" id="itemDescription"><br><br>
+    <button type="submit">Search</button>
+</form>
+<h2>View your results here!</h2>
+{{range .Items}}
+    <a href="/items/{{.ID}}">item "{{.Name}}"</a>
+{{else}}
+    No results
+{{end}}
 </body>
 </html>

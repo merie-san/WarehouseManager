@@ -5,6 +5,18 @@
     <title>Account page</title>
 </head>
 <body>
-
+<nav>
+    {{template "navbar" .}}
+    {{template "notifications" .}}
+</nav>
+<h1>Change your password here!</h1>
+<form method="POST" action="/account">
+    username: {{.Username}}
+    <label for="oldPassword">Enter your old password here:</label><br>
+    <input type="password" id="oldPassword" name="oldPassword"><br><br>
+    <label for="newPassword">Enter your new password here:</label><br>
+    <input type="password" id="newPassword" name="newPassword"><br><br>
+    <button type="submit">Change</button>
+</form>
 </body>
 </html>

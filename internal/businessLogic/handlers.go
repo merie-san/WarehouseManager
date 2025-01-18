@@ -10,7 +10,6 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"regexp"
 	"strconv"
 	"time"
 )
@@ -18,7 +17,7 @@ import (
 // The various html files used in this project
 var htmlFiles = []string{
 	"account.html", "home.html", "login.html", "register.html", "warehouse.html", "warehouses.html", "items.html", "item.html",
-	"items_search.html", "warehouses_search.html", "not_found.html"}
+	"items_search.html", "warehouses_search.html", "not_found.html", "navbar.html", "notifications.html"}
 
 // We complete the file path by appending the "templates/" prefix and parse them to generate a template file
 var templates = template.Must(template.ParseFiles(func() (result []string) {
@@ -46,14 +45,14 @@ type userSession struct {
 }
 
 // global variable to manage the sessions of clients
-var userSessions = map[string]userSession{}
+var userSessions = make(map[string]userSession)
 
 // SetSessions is a method used only for testing
 func SetSessions(sessions map[string]userSession) {
 	userSessions = sessions
 }
 
-// isExpired is an utility function to check if a session is expired or not
+// isExpired is a utility function to check if a session is expired or not
 func (s userSession) isExpired() bool {
 	return s.expireAt.Before(time.Now())
 }
@@ -98,14 +97,19 @@ type WarehousePage struct {
 	Warehouse model.Warehouse
 }
 
-// SearchPage display the result of a serching operation
+// SearchPage display the result of a searching operation
 type SearchPage struct {
 	Page
 	Warehouses []model.Warehouse
 	Items      []model.Item
 }
 
-// Middleware for HomeHandler. It helps in showing the right messages in case of a access without login
+type AccountPage struct {
+	Page
+	Username string
+}
+
+// Middleware for HomeHandler. It helps in showing the right messages in case of an access without login
 func SessionIsAbsentHomeHandler(nextHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
@@ -140,7 +144,7 @@ func SessionIsAbsentHomeHandler(nextHandler http.HandlerFunc) http.HandlerFunc {
 
 // HomeHandler displays the home page
 func HomeHandler(w http.ResponseWriter, r *http.Request) {
-	session, _ := accessSession(w, r)
+	session, _ := getSession(w, r)
 	var page Page
 	page.LoggedIn = true
 	page.AuthMsg = processFlashMessage(w, r, "flash")
@@ -200,18 +204,22 @@ func SessionIsAbsentRedirectHandler(nextHandler http.HandlerFunc) http.HandlerFu
 // RefreshHandler refreshes the session corresponding to the user making the request
 func RefreshHandler(nextHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		c, _ := r.Cookie("session_token")
+		c, err := r.Cookie("session_token")
+		if errors.Is(err, http.ErrNoCookie) {
+			http.Error(w, "No session cookie when there should be", http.StatusInternalServerError)
+		}
 		oldAlias := userSessions[c.Value].alias
 		oldID := userSessions[c.Value].id
-		createNewSession(w, oldAlias, oldID)
-		delete(userSessions, c.Value)
+		createNewSession(w, oldAlias, oldID, c.Value)
 		nextHandler.ServeHTTP(w, r)
 		return
 	}
 }
 
+var tempCookieContainer *http.Cookie
+
 // createNewSession allows for the creation of a new session object to substitute the old one
-func createNewSession(w http.ResponseWriter, alias string, userID uint) {
+func createNewSession(w http.ResponseWriter, alias string, userID uint, oldToken string) {
 	newSessionToken := base64.URLEncoding.EncodeToString([]byte(auth.ShaHashing(strconv.Itoa(rand.Intn(1000000)))))
 	newExpiration := time.Now().Add(time.Minute * 5)
 	userSessions[newSessionToken] = userSession{
@@ -219,17 +227,24 @@ func createNewSession(w http.ResponseWriter, alias string, userID uint) {
 		userID,
 		newExpiration,
 	}
-	http.SetCookie(w, &http.Cookie{
+	tempCookieContainer = &http.Cookie{
 		Name:    "session_token",
 		Value:   newSessionToken,
 		Expires: newExpiration,
-	})
+	}
+	http.SetCookie(w, tempCookieContainer)
+	if oldToken != "" {
+		delete(userSessions, oldToken)
+	}
 }
 
 // ItemsHandler handlers operations on the /items page
 func ItemsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		session, _ := accessSession(w, r)
+		session, ok := getSessionAfterRefresh()
+		if !ok {
+			http.Error(w, "no session found", http.StatusInternalServerError)
+		}
 		var page ItemsPage
 		page.LoggedIn = true
 		page.LOError = processFlashMessage(w, r, "lOError")
@@ -251,7 +266,10 @@ func ItemsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	} else if r.Method == http.MethodPost {
-		session, _ := accessSession(w, r)
+		session, ok := getSessionAfterRefresh()
+		if !ok {
+			http.Error(w, "no session found", http.StatusInternalServerError)
+		}
 		itemName := r.FormValue("itemName")
 		itemCategory := r.FormValue("itemCategory")
 		itemDescription := r.FormValue("itemDescription")
@@ -290,7 +308,10 @@ func WarehousesHandler(w http.ResponseWriter, r *http.Request) {
 		var page WarehousesPage
 		page.LoggedIn = true
 		page.LOError = processFlashMessage(w, r, "lOError")
-		session, _ := accessSession(w, r)
+		session, ok := getSessionAfterRefresh()
+		if !ok {
+			http.Error(w, "no session found", http.StatusInternalServerError)
+		}
 		warehouses, err1 := authManager.ListAllWarehouses(session.id)
 		if err1 != nil {
 			page.APPError = err1.Error()
@@ -307,7 +328,10 @@ func WarehousesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	} else if r.Method == http.MethodPost {
-		session, _ := accessSession(w, r)
+		session, ok := getSessionAfterRefresh()
+		if !ok {
+			http.Error(w, "no session found", http.StatusInternalServerError)
+		}
 		warehouseName := r.FormValue("warehouseName")
 		warehousePosition := r.FormValue("warehousePosition")
 		warehouseCapacity, err4 := strconv.Atoi(r.FormValue("warehouseCapacity"))
@@ -391,7 +415,10 @@ func SupplyItemHandler(w http.ResponseWriter, r *http.Request) {
 
 // collectData is a utility function to collect data
 func collectData(w http.ResponseWriter, r *http.Request) (rSession userSession, rAmount int, rItemID int) {
-	session, _ := accessSession(w, r)
+	session, ok := getSessionAfterRefresh()
+	if !ok {
+		http.Error(w, "no session found", http.StatusInternalServerError)
+	}
 	amount, err1 := strconv.Atoi(r.FormValue("amount"))
 	if err1 != nil {
 		http.Error(w, err1.Error(), http.StatusInternalServerError)
@@ -435,7 +462,10 @@ func TransferItemHandler(w http.ResponseWriter, r *http.Request) {
 
 // ItemHandler handlers the operations on the /item/{id} page
 func ItemHandler(w http.ResponseWriter, r *http.Request) {
-	session, _ := accessSession(w, r)
+	session, ok := getSessionAfterRefresh()
+	if !ok {
+		http.Error(w, "no session found", http.StatusInternalServerError)
+	}
 	vars := mux.Vars(r)
 	itemIDStr := vars["itemID"]
 	itemID, err1 := strconv.Atoi(itemIDStr)
@@ -484,17 +514,7 @@ func putItem(w http.ResponseWriter, r *http.Request, session userSession, itemID
 	itemName := r.FormValue("itemName")
 	itemCategory := r.FormValue("itemCategory")
 	itemDescription := r.FormValue("itemDescription")
-	referer := r.Header.Get("Referer")
-	match, err4 := regexp.Match("/item/[0-9]+", []byte(referer))
-	if err4 != nil {
-		http.Error(w, err4.Error(), http.StatusInternalServerError)
-		return
-	}
-	if match {
-		updateItem(w, r, session, itemID, itemName, itemCategory, itemDescription)
-		return
-	}
-	http.Error(w, "Bad access", http.StatusForbidden)
+	updateItem(w, r, session, itemID, itemName, itemCategory, itemDescription)
 	return
 }
 
@@ -566,7 +586,10 @@ func findHostingWarehouses(w http.ResponseWriter, session userSession, itemID in
 
 // handlers the Warehouse page
 func WarehouseHandler(w http.ResponseWriter, r *http.Request) {
-	session, _ := accessSession(w, r)
+	session, ok := getSessionAfterRefresh()
+	if !ok {
+		http.Error(w, "no session found", http.StatusInternalServerError)
+	}
 	vars := mux.Vars(r)
 	warehouseIDStr := vars["warehouseID"]
 	warehouseID, err1 := strconv.Atoi(warehouseIDStr)
@@ -618,17 +641,7 @@ func putWarehouse(w http.ResponseWriter, r *http.Request, session userSession, w
 		http.Error(w, err4.Error(), http.StatusInternalServerError)
 		return
 	}
-	referer := r.Header.Get("Referer")
-	match, err2 := regexp.Match("/warehouse/[0-9]+", []byte(referer))
-	if err2 != nil {
-		http.Error(w, err2.Error(), http.StatusInternalServerError)
-		return
-	}
-	if match {
-		updateWarehouse(w, r, session, warehouseID, warehouseName, warehousePosition, warehouseCapacity)
-		return
-	}
-	http.Error(w, "Bad access", http.StatusForbidden)
+	updateWarehouse(w, r, session, warehouseID, warehouseName, warehousePosition, warehouseCapacity)
 	return
 }
 
@@ -693,7 +706,10 @@ func ItemsSearchHandler(w http.ResponseWriter, r *http.Request) {
 func searchItem(w http.ResponseWriter, r *http.Request) {
 	var page SearchPage
 	page.LoggedIn = true
-	session, _ := accessSession(w, r)
+	session, ok := getSessionAfterRefresh()
+	if !ok {
+		http.Error(w, "no session found", http.StatusInternalServerError)
+	}
 	itemIDStr := r.FormValue("itemID")
 	itemName := r.FormValue("itemName")
 	itemCategory := r.FormValue("itemCategory")
@@ -834,7 +850,10 @@ func WarehousesSearchHandler(w http.ResponseWriter, r *http.Request) {
 func searchWarehouse(w http.ResponseWriter, r *http.Request) {
 	var page SearchPage
 	page.LoggedIn = true
-	session, _ := accessSession(w, r)
+	session, ok := getSessionAfterRefresh()
+	if !ok {
+		http.Error(w, "no session found", http.StatusInternalServerError)
+	}
 	warehouseIDStr := r.FormValue("warehouseID")
 	warehouseName := r.FormValue("warehouseName")
 	warehousePosition := r.FormValue("warehousePosition")
@@ -928,13 +947,13 @@ func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // utility method to quickly get the session_token of the client
-func accessSession(w http.ResponseWriter, r *http.Request) (session userSession, ok bool) {
+func getSession(w http.ResponseWriter, r *http.Request) (userSession, bool) {
 	c1, err1 := r.Cookie("session_token")
 	if err1 != nil && !errors.Is(err1, http.ErrNoCookie) {
 		http.Error(w, err1.Error(), http.StatusBadRequest)
 	}
-	session, ok = userSessions[c1.Value]
-	return
+	session, ok := userSessions[c1.Value]
+	return session, ok
 }
 
 // SessionIsPresentHandler wraps around the login and register pages to redirect requests by users who are already logged in
@@ -1050,7 +1069,17 @@ func postLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
-	createNewSession(w, username, userID)
+	c, err2 := r.Cookie("session_token")
+	var token string
+	if errors.Is(err2, http.ErrNoCookie) {
+		token = ""
+	} else if err2 != nil {
+		token = c.Value
+	} else {
+		http.Error(w, "unexpected error when accessing cookie", http.StatusInternalServerError)
+		return
+	}
+	createNewSession(w, username, userID, token)
 	http.Redirect(w, r, "/home", http.StatusFound)
 	return
 }
@@ -1073,6 +1102,8 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, referer, http.StatusFound)
 			return
 		}
+		c, _ := r.Cookie("session_token")
+		delete(userSessions, c.Value)
 		newC := http.Cookie{
 			Name:    "session_token",
 			Value:   "",
@@ -1085,6 +1116,68 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+}
+
+func AccountHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		{
+			getAccount(w, r)
+			return
+		}
+	case http.MethodPost:
+		{
+			postAccount(w, r)
+			return
+		}
+	default:
+		{
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	}
+}
+
+func getSessionAfterRefresh() (userSession, bool) {
+	token := tempCookieContainer.Value
+	session, ok := userSessions[token]
+	return session, ok
+}
+
+func postAccount(w http.ResponseWriter, r *http.Request) {
+	token := tempCookieContainer.Value
+	username := userSessions[token].alias
+	oldPassword := r.FormValue("oldPassword")
+	newPassword := r.FormValue("newPassword")
+	err := authManager.ChangePassword(username, oldPassword, newPassword)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		setFlashMessage(w, "error", err.Error())
+		http.Redirect(w, r, "/account", http.StatusFound)
+		return
+	}
+	http.Redirect(w, r, "/home", http.StatusFound)
+	return
+}
+
+func getAccount(w http.ResponseWriter, r *http.Request) {
+	var page AccountPage
+	session, ok := getSessionAfterRefresh()
+	if !ok {
+		http.Error(w, "Session not found", http.StatusInternalServerError)
+		return
+	}
+	page.LoggedIn = true
+	page.LOError = processFlashMessage(w, r, "lOError")
+	page.APPMsg = evaluateItems(session)
+	page.AuthMsg = processFlashMessage(w, r, "flash")
+	page.Username = session.alias
+	err := templates.ExecuteTemplate(w, "account.html", page)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	return
 }
 
 // capture cookies and eliminates them
@@ -1179,6 +1272,7 @@ func BuildAPPRouter() *mux.Router {
 	router.HandleFunc("/login", SessionIsPresentHandler(LoginHandler))
 	router.HandleFunc("/register", SessionIsPresentHandler(RegisterHandler))
 	router.HandleFunc("/logout", LogoutHandler)
+	router.HandleFunc("/account", SessionIsAbsentRedirectHandler(RefreshHandler(AccountHandler)))
 	router.HandleFunc("/items", SessionIsAbsentRedirectHandler(RefreshHandler(ItemsHandler)))
 	router.HandleFunc("/warehouses", SessionIsAbsentRedirectHandler(RefreshHandler(WarehousesHandler)))
 	router.HandleFunc("/item/{itemID:[0-9]+}", SessionIsAbsentRedirectHandler(RefreshHandler(ItemHandler)))

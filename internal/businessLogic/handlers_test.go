@@ -96,6 +96,7 @@ func TestHandlers(t *testing.T) {
 		"/item/5/supply",
 		"/items/search",
 		"/warehouses/search",
+		"/account",
 	}
 	for _, homeURL := range urls {
 		t.Run("routing tests redirect to login page path "+homeURL, func(t *testing.T) {
@@ -153,6 +154,7 @@ func TestHandlers(t *testing.T) {
 			}
 		})
 	}
+	SetSessions(make(map[string]userSession))
 	t.Run("Registration login and logout", func(t *testing.T) {
 		req1, err1 := http.NewRequest(http.MethodPost, "/register", nil)
 		if err1 != nil {
@@ -171,7 +173,7 @@ func TestHandlers(t *testing.T) {
 		if rr.Header().Get("Location") != "/login" {
 			t.Errorf("Redirected to wrong URL. Expected /login, got %s", rr.Header().Get("Location"))
 		}
-		rr, _ = login(t, router)
+		rr, _ = login(t, router, "longPassword")
 		if rr.Code != http.StatusFound {
 			t.Errorf("Returned wrong status code. Expected %d, got %d", http.StatusFound, rr.Code)
 		}
@@ -249,10 +251,33 @@ func TestHandlers(t *testing.T) {
 			}
 		})
 	}
+	t.Run("Password change", func(t *testing.T) {
+		router := BuildAPPRouter()
+		rr, _ = login(t, router, "longPassword")
+		req, err := http.NewRequest(http.MethodPost, "/account", nil)
+		if err != nil {
+			t.Fatalf("Reported error: " + err.Error())
+		}
+		neededCookies := rr.Result().Cookies()
+		for _, cookie := range neededCookies {
+			req.AddCookie(cookie)
+		}
+		rr = httptest.NewRecorder()
+		form, _ := url.ParseQuery(req.URL.RawQuery)
+		form.Add("oldPassword", "longPassword")
+		form.Add("newPassword", "shortPassword")
+		req.URL.RawQuery = form.Encode()
+		router.ServeHTTP(rr, req)
+		if rr.Code != http.StatusFound {
+			t.Errorf("Returned wrong status code. Expected %d, got %d\nError: %v", http.StatusFound, rr.Code, rr.Body)
+		}
+		if rr.Header().Get("Location") != "/home" {
+			t.Errorf("Redirected to wrong URL. Expected /home, got %s", rr.Header().Get("Location"))
+		}
+	})
 	t.Run("Basic Operations on resource", func(t *testing.T) {
 		router := BuildAPPRouter()
-		rr, _ = login(t, router)
-		t.Run("Create resource", func(t *testing.T) {
+		t.Run("Creating and updating a resource", func(t *testing.T) {
 			for i := 1; i < 3; i++ {
 				req, err := http.NewRequest(http.MethodPost, "/warehouses", nil)
 				if err != nil {
@@ -297,6 +322,49 @@ func TestHandlers(t *testing.T) {
 			}
 			if rr.Header().Get("Location") != "/item/1" {
 				t.Errorf("Wrong redirect- expected redirect: /item/1 actual redirect: %s", rr.Header().Get("Location"))
+			}
+			req2, err2 = http.NewRequest(http.MethodPut, "/item/1", nil)
+			if err2 != nil {
+				t.Fatalf("Reported error: " + err2.Error())
+			}
+			cookies = rr.Result().Cookies()
+			for _, cookie := range cookies {
+				req2.AddCookie(cookie)
+			}
+			rr = httptest.NewRecorder()
+			form, _ = url.ParseQuery(req2.URL.RawQuery)
+			form.Add("itemName", "Keyboard")
+			form.Add("itemCategory", "electronics")
+			form.Add("itemDescription", "mechanical retro-illuminated keyboard mod")
+			req2.URL.RawQuery = form.Encode()
+			router.ServeHTTP(rr, req2)
+			if rr.Code != http.StatusFound {
+				t.Errorf("Returned wrong status code. Expected %d, got %d", http.StatusFound, rr.Code)
+			}
+			if rr.Header().Get("Location") != "/items" {
+				t.Errorf("Wrong redirect- expected redirect: /items actual redirect: %s", rr.Header().Get("Location"))
+			}
+
+			req, err := http.NewRequest(http.MethodPut, "/warehouse/1", nil)
+			if err != nil {
+				t.Fatalf("Reported error: " + err.Error())
+			}
+			cookies = rr.Result().Cookies()
+			for _, cookie := range cookies {
+				req.AddCookie(cookie)
+			}
+			rr = httptest.NewRecorder()
+			form, _ = url.ParseQuery(req.URL.RawQuery)
+			form.Add("warehousePosition", "Tuscany")
+			form.Add("warehouseName", "La Rosa 1")
+			form.Add("warehouseCapacity", "3000")
+			req.URL.RawQuery = form.Encode()
+			router.ServeHTTP(rr, req)
+			if rr.Code != http.StatusFound {
+				t.Errorf("Returned wrong status code. Expected %d, got %d", http.StatusFound, rr.Code)
+			}
+			if rr.Header().Get("Location") != "/warehouses" {
+				t.Errorf("Wrong redirect- expected redirect: /warehouses actual redirect: %s", rr.Header().Get("Location"))
 			}
 		})
 		t.Run("Supplying transferring removing resources", func(t *testing.T) {
@@ -388,6 +456,7 @@ func TestHandlers(t *testing.T) {
 		"/warehouse/1",
 		"/items/search",
 		"/warehouses/search",
+		"/account",
 	}
 	for _, homeURL := range urls {
 		t.Run("get various resource pages "+homeURL, func(t *testing.T) {
@@ -409,7 +478,7 @@ func TestHandlers(t *testing.T) {
 	}
 }
 
-func login(t *testing.T, router *mux.Router) (*httptest.ResponseRecorder, *http.Request) {
+func login(t *testing.T, router *mux.Router, password string) (*httptest.ResponseRecorder, *http.Request) {
 	req, err2 := http.NewRequest(http.MethodPost, "/login", nil)
 	rr = httptest.NewRecorder()
 	if err2 != nil {
@@ -417,7 +486,7 @@ func login(t *testing.T, router *mux.Router) (*httptest.ResponseRecorder, *http.
 	}
 	form, _ := url.ParseQuery(req.URL.RawQuery)
 	form.Add("username", "david")
-	form.Add("password", "longPassword")
+	form.Add("password", password)
 	req.URL.RawQuery = form.Encode()
 	router.ServeHTTP(rr, req)
 	return rr, req
@@ -446,5 +515,6 @@ func clean(t *testing.T) {
 				t.Fatalf("Failed to remove file\nerror: %v", err3)
 			}
 		}
+		_ = os.Remove("users.json")
 	}
 }

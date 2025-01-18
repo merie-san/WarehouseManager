@@ -5,6 +5,22 @@
     <title>Warehouse page</title>
 </head>
 <body>
-
+<nav>
+    {{template "navbar" .}}
+    {{template "notifications" .}}
+</nav>
+<h1>Manage {{.Warehouse.Name}}</h1>
+<h2>Edit the information about the warehouse here!</h2>
+<form method="PUT" action="/warehouse/{{.Warehouse.ID}}">
+    <label for="warehouseName">Name:</label><br>
+    <input type="text" id="warehouseName" name="warehouseName" value="{{.Warehouse.Name}}" required> <br><br>
+    <label for="warehousePosition">Position:</label><br>
+    <input type="text" id="warehousePosition" name="warehousePosition" value="{{.Warehouse.Position}}" required>
+    <br><br>
+    <label for="warehouseCapacity">Capacity:</label><br>
+    <input type="number" id="warehouseCapacity" name="warehouseCapacity" value="{{.Warehouse.Capacity}}" required>
+    <br><br>
+    <button type="submit">Change</button>
+</form>
 </body>
 </html>

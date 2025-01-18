@@ -5,6 +5,30 @@
     <title>Warehouses search page</title>
 </head>
 <body>
-
+<nav>
+    {{template "navbar" .}}
+    {{template "notifications" .}}
+</nav>
+<h1>Search for warehouses and view your search results here!</h1>
+<h2>Search for warehouses here!</h2>
+<form action="/warehouses/search" method="POST">
+    <label for="warehouseID">warehouse ID:</label><br>
+    <input type="text" id="warehouseID" name="warehouseID"> <br><br>
+    <label for="warehouseName">warehouse name:</label><br>
+    <input type="text" id="warehouseName" name="warehouseName"> <br><br>
+    <label for="warehousePosition">warehouse position:</label><br>
+    <input type="text" id="warehousePosition" name="warehousePosition">
+    <br><br>
+    <label for="warehouseCapacity">warehouse capacity:</label><br>
+    <input id="warehouseCapacity" name="warehouseCapacity">
+    <br><br>
+    <button type="submit">Search</button>
+</form>
+<h2>View your results here!</h2>
+{{range .Warehouses}}
+    <a href="/items/{{.ID}}">item "{{.Name}}"</a>
+{{else}}
+    No results
+{{end}}
 </body>
 </html>

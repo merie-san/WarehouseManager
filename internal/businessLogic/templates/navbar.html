@@ -1,0 +1,44 @@
+{{define "navbar"}}
+{{if .IsLoggedIn}}
+<nav>
+    <ul>
+        <li>
+            <a href="/">
+                <button>Home</button>
+            </a>
+            <a href="/items">
+                <button>Go to items</button>
+            </a>
+            <a href="/warehouses">
+                <button>Go to warehouses</button>
+            </a>
+            <a href="/items/search">
+                <button>Search for items</button>
+            </a>
+            <a href="/warehouses/search">
+                <button>Search for warehouses</button>
+            </a>
+            <form action="/logout" method="post">
+                <button type="submit">Logout</button>
+            </form>
+        </li>
+    </ul>
+</nav>
+{{else}}
+<nav>
+    <ul>
+        <li>
+            <a href="/">
+                <button>Home</button>
+            </a>
+            <a href="/login">
+                <button>Login</button>
+            </a>
+            <a href="/register">
+                <button>Register</button>
+            </a>
+        </li>
+    </ul>
+</nav>
+{{end}}
+{{end}}
