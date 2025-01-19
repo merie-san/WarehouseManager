@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
     <title>Account page</title>
 </head>
 <body>
@@ -9,14 +11,18 @@
     {{template "navbar" .}}
     {{template "notifications" .}}
 </nav>
-<h1>Change your password here!</h1>
-<form method="POST" action="/account">
-    <h2>account name: "{{.Username}}"</h2>
-    <label for="oldPassword">Enter your old password here:</label><br>
-    <input type="password" id="oldPassword" name="oldPassword"><br><br>
-    <label for="newPassword">Enter your new password here:</label><br>
-    <input type="password" id="newPassword" name="newPassword"><br><br>
-    <button type="submit">Change</button>
-</form>
+<header>
+    <h1>Change your password here!</h1>
+</header>
+<main>
+    <form method="POST" action="/account">
+        <h2>account name: "{{.Username}}"</h2>
+        <label for="oldPassword">Enter your old password here:</label><br>
+        <input type="password" id="oldPassword" name="oldPassword"><br><br>
+        <label for="newPassword">Enter your new password here:</label><br>
+        <input type="password" id="newPassword" name="newPassword"><br><br>
+        <button type="submit">Change</button>
+    </form>
+</main>
 </body>
 </html>

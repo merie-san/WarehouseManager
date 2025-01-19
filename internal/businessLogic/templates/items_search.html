@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
     <title>Items search page</title>
 </head>
 <body>
@@ -9,7 +11,8 @@
     {{template "navbar" .}}
     {{template "notifications" .}}
 </nav>
-<h1>Search for items and view your search results here!</h1>
+<header><h1>Search for items and view your search results here!</h1></header>
+<main>
 <h2>Search for items here!</h2>
 <form method="POST" action="/items/search">
     <label for="itemID">item ID</label><br>
@@ -28,5 +31,6 @@
 {{else}}
     No results
 {{end}}
+</main>
 </body>
 </html>

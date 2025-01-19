@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
     <title>Item page</title>
 </head>
 <body>
@@ -9,7 +11,8 @@
     {{template "navbar" .}}
     {{template "notifications" .}}
 </nav>
-<h1>Manage {{.Item.Name}} here!</h1>
+<header><h1>Manage {{.Item.Name}} here!</h1></header>
+<main>
 <h2>Edit the information about the item here!</h2>
 <form method="POST" action="/item/{{.Item.ID}}/edit">
     <label for="itemName">Name:</label><br>
@@ -25,7 +28,7 @@
 <p>You have {{.Item.Quantity}} of item "{{.Item.Name}}" in all warehouses</p>
 <h2>Supply items to your warehouses here!</h2>
 {{range .WarehousesWithAmount}}
-    <p>Warehouse: {{.Name}} - stock: {{.Amount}} </p>
+    <p>Warehouse: {{.Name}} - items in stock: {{.Amount}} </p>
     <form action="/item/{{$.Item.ID}}/supply" method="POST">
         <label for="amount1">amount to add</label>
         <input type="number" id="amount1" name="amount" required><br><br>
@@ -37,7 +40,7 @@
 {{end}}
 <h2>Consume or transfer items between warehouses here!</h2>
 {{range .ItemPacks}}
-    <p>Warehouse: {{.WarehouseName}} - stock: {{.ItemQuantity}}</p>
+    <p>Warehouse: {{.WarehouseName}} - items in stock: {{.ItemQuantity}}</p>
     <form action="/item/{{$.Item.ID}}/consume" method="POST">
         <label for="amount2">amount to subtract</label>
         <input type="number" id="amount2" name="amount" required><br><br>
@@ -53,11 +56,12 @@
             {{range $.WarehousesWithAmount}}
                 <option value="{{.ID}}">warehouse "{{.Name}}"</option>
             {{end}}
-        </select>
+        </select><br><br>
         <button type="submit">Transfer</button>
     </form><br><br>
 {{else}}
     <p>Item is absent from all warehouses</p>
 {{end}}
+</main>
 </body>
 </html>

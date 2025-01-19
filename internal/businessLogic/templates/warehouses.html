@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
     <title>Warehouses page</title>
 </head>
 <body>
@@ -9,7 +11,8 @@
     {{template "navbar" .}}
     {{template "notifications" .}}
 </nav>
-<h1>View, create and delete your warehouses here!</h1>
+<header><h1>View, create and delete your warehouses here!</h1></header>
+<main>
 <h2>Delete your warehouses and view their pages here!</h2>
 {{range .Content}}
     <a href="/warehouse/{{.ID}}">warehouse "{{.Name}}"</a><br>
@@ -31,5 +34,6 @@
     <br><br>
     <button type="submit">Create</button>
 </form>
+</main>
 </body>
 </html>

@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
     <title>Warehouse page</title>
 </head>
 <body>
@@ -9,7 +11,10 @@
     {{template "navbar" .}}
     {{template "notifications" .}}
 </nav>
-<h1>Manage {{.Warehouse.Name}}</h1>
+<header>
+    <h1>Manage {{.Warehouse.Name}}</h1>
+</header>
+<main>
 <h2>Edit the information about the warehouse here!</h2>
 <form method="POST" action="/warehouse/{{.Warehouse.ID}}/edit">
     <label for="warehouseName">Name:</label><br>
@@ -28,5 +33,6 @@
 {{else}}
     <p>No items found in warehouse "{{.Warehouse.Name}}"</p>
 {{end}}
+</main>
 </body>
 </html>

@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
     <title>Warehouses search page</title>
 </head>
 <body>
@@ -9,11 +11,12 @@
     {{template "navbar" .}}
     {{template "notifications" .}}
 </nav>
-<h1>Search for warehouses and view your search results here!</h1>
+<header><h1>Search for warehouses and view your search results here!</h1></header>
+<main>
 <h2>Search for warehouses here!</h2>
 <form action="/warehouses/search" method="POST">
     <label for="warehouseID">warehouse ID:</label><br>
-    <input type="text" id="warehouseID" name="warehouseID"> <br><br>
+    <input type="number" id="warehouseID" name="warehouseID"> <br><br>
     <label for="warehouseName">warehouse name:</label><br>
     <input type="text" id="warehouseName" name="warehouseName"> <br><br>
     <label for="warehousePosition">warehouse position:</label><br>
@@ -27,5 +30,6 @@
 {{else}}
     No results
 {{end}}
+</main>
 </body>
 </html>

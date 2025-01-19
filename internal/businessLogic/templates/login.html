@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
     <title>Login page</title>
 </head>
 <body>
@@ -9,7 +11,8 @@
     {{template "navbar" .}}
     {{template "notifications" .}}
 </nav>
-<h1>Compile this form to log in!</h1>
+<header><h1>Compile this form to log in!</h1></header>
+<main>
 <form method="POST" action="/login">
     <label for="username">Enter your registered username:</label> <br>
     <input type="text" id="username" name="username" required> <br><br>
@@ -17,5 +20,6 @@
     <input type="password" id="password" name="password" required> <br><br>
     <button type="submit">Login</button>
 </form>
+</main>
 </body>
 </html>

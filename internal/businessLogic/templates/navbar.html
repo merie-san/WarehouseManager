@@ -1,6 +1,12 @@
 {{define "navbar"}}
     {{if .LoggedIn}}
         <nav>
+            <form action="/logout" method="post">
+                <button type="submit">Logout</button>
+            </form>
+            <a href="/account">
+                <button>Change password</button>
+            </a>
             <a href="/">
                 <button>Home</button>
             </a>
@@ -16,12 +22,6 @@
             <a href="/warehouses/search">
                 <button>Search for warehouses</button>
             </a>
-            <a href="/account">
-                <button>Change password</button>
-            </a>
-            <form action="/logout" method="post">
-                <button type="submit">Logout</button>
-            </form>
         </nav>
     {{else}}
         <nav>
