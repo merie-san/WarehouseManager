@@ -19,14 +19,11 @@
     <label for="warehousePosition">warehouse position:</label><br>
     <input type="text" id="warehousePosition" name="warehousePosition">
     <br><br>
-    <label for="warehouseCapacity">warehouse capacity:</label><br>
-    <input id="warehouseCapacity" name="warehouseCapacity">
-    <br><br>
     <button type="submit">Search</button>
 </form>
 <h2>View your results here!</h2>
 {{range .Warehouses}}
-    <a href="/items/{{.ID}}">item "{{.Name}}"</a>
+    <a href="/warehouse/{{.ID}}">warehouse "{{.Name}}"</a>
 {{else}}
     No results
 {{end}}

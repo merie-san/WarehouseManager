@@ -11,7 +11,7 @@
 </nav>
 <h1>Manage {{.Item.Name}} here!</h1>
 <h2>Edit the information about the item here!</h2>
-<form method="PUT" action="/item/{{.Item.ID}}">
+<form method="POST" action="/item/{{.Item.ID}}/edit">
     <label for="itemName">Name:</label><br>
     <input type="text" id="itemName" name="itemName" value="{{.Item.Name}}" required> <br><br>
     <label for="itemCategory">Category:</label><br>
@@ -22,44 +22,42 @@
     <br><br>
     <button type="submit">Change</button>
 </form>
+<p>You have {{.Item.Quantity}} of item "{{.Item.Name}}" in all warehouses</p>
 <h2>Supply items to your warehouses here!</h2>
-{{range .AllWarehouses}}
-<p>Warehouse {{.Name}}</p>
-<form action="/item/{{$.Item.ID}}/supply" method="POST">
-    <label for="amount1">amount to add</label>
-    <input type="number" id="amount1" name="amount" required><br><br>
-    <button type="submit">Add</button>
-</form>
+{{range .WarehousesWithAmount}}
+    <p>Warehouse: {{.Name}} - stock: {{.Amount}} </p>
+    <form action="/item/{{$.Item.ID}}/supply" method="POST">
+        <label for="amount1">amount to add</label>
+        <input type="number" id="amount1" name="amount" required><br><br>
+        <input type="hidden" name="warehouseID" value="{{.ID}}">
+        <button type="submit">Add</button>
+    </form>
 {{else}}
-No warehouses present in the repository
+    No warehouses present in the repository
 {{end}}
 <h2>Consume or transfer items between warehouses here!</h2>
-{{range .HostingWarehouses}}
-<p>Warehouse {{.Name}}</p>
-<form action="/item/{{$.Item.ID}}/consume" method="POST">
-    <label for="amount2">amount to subtract</label>
-    <input type="number" id="amount2" name="amount" required><br><br>
-    <button type="submit">Consume</button>
-</form><br><br>
-<form action="/item/{{$.Item.ID}}/transfer" method="POST">
-    <label for="amount3">amount to transfer</label>
-    <input type="number" id="amount3" name="amount" required><br><br>
-    <label for="srcID">choose source warehouse</label>
-    <select id="srcID" name="srcID">
-        {{range .HostingWarehouses}}
-            <option value="{{.ID}}">warehouse "{{.Name}}"</option>
-        {{end}}
-    </select>
-    <label for="destID">choose destination warehouse</label>
-    <select id="destID" name="destID">
-        {{range .AllWarehouses}}
-            <option value="{{.ID}}">warehouse "{{.Name}}"</option>
-        {{end}}
-    </select>
-    <button type="submit">Transfer</button>
-</form>
+{{range .ItemPacks}}
+    <p>Warehouse: {{.WarehouseName}} - stock: {{.ItemQuantity}}</p>
+    <form action="/item/{{$.Item.ID}}/consume" method="POST">
+        <label for="amount2">amount to subtract</label>
+        <input type="number" id="amount2" name="amount" required><br><br>
+        <input type="hidden" name="warehouseID" value="{{.WarehouseID}}">
+        <button type="submit">Consume</button>
+    </form><br><br>
+    <form action="/item/{{$.Item.ID}}/transfer" method="POST">
+        <label for="amount3">amount to transfer</label>
+        <input type="number" id="amount3" name="amount" required><br><br>
+        <input type="hidden" name="srcID" value="{{.WarehouseID}}">
+        <label for="destID">choose destination warehouse</label>
+        <select id="destID" name="destID">
+            {{range $.WarehousesWithAmount}}
+                <option value="{{.ID}}">warehouse "{{.Name}}"</option>
+            {{end}}
+        </select>
+        <button type="submit">Transfer</button>
+    </form><br><br>
 {{else}}
-Item is absent from all warehouses
+    <p>Item is absent from all warehouses</p>
 {{end}}
 </body>
 </html>

@@ -13,7 +13,7 @@
 <h2>Delete your items and view their pages here!</h2>
 {{range .Content}}
     <a href="/item/{{.ID}}">item "{{.Name}}"</a>
-    <form action="/item/{{.ID}}" method="DELETE">
+    <form action="/item/{{.ID}}/delete" method="POST">
         <button type="submit">Delete</button>
     </form>
 {{else}}

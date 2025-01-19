@@ -1,8 +1,6 @@
 {{define "navbar"}}
-{{if .IsLoggedIn}}
-<nav>
-    <ul>
-        <li>
+    {{if .LoggedIn}}
+        <nav>
             <a href="/">
                 <button>Home</button>
             </a>
@@ -18,16 +16,15 @@
             <a href="/warehouses/search">
                 <button>Search for warehouses</button>
             </a>
+            <a href="/account">
+                <button>Change password</button>
+            </a>
             <form action="/logout" method="post">
                 <button type="submit">Logout</button>
             </form>
-        </li>
-    </ul>
-</nav>
-{{else}}
-<nav>
-    <ul>
-        <li>
+        </nav>
+    {{else}}
+        <nav>
             <a href="/">
                 <button>Home</button>
             </a>
@@ -37,8 +34,6 @@
             <a href="/register">
                 <button>Register</button>
             </a>
-        </li>
-    </ul>
-</nav>
-{{end}}
+        </nav>
+    {{end}}
 {{end}}

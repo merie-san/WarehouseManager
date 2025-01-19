@@ -89,18 +89,16 @@ func LoadAuthManager(injector func(string) (model.WarehouseRepository, error)) (
 	if manager == nil {
 		var f *os.File
 		users := make([]User, 0)
-		_, err1 := os.Stat("users.json")
+		_, err1 := os.Stat("data/users.json")
 		if err1 != nil {
-			f, _ = os.Create("users.json")
-			defer f.Close()
+			f, _ = os.Create("data/users.json")
 			encoder := json.NewEncoder(f)
 			err2 := encoder.Encode(users)
 			if err2 != nil {
 				return nil, err2
 			}
 		} else {
-			f, _ = os.Open("users.json")
-			defer f.Close()
+			f, _ = os.Open("data/users.json")
 			decoder := json.NewDecoder(f)
 			err2 := decoder.Decode(&users)
 			if err2 != nil {
@@ -113,7 +111,7 @@ func LoadAuthManager(injector func(string) (model.WarehouseRepository, error)) (
 }
 
 func (manager *AuthenticationManager) Save() error {
-	f, err := os.Create("users.json")
+	f, err := os.Create("data/users.json")
 	if err != nil {
 		return err
 	}
@@ -200,11 +198,11 @@ func (manager *AuthenticationManager) Register(username string, password string)
 		User{Username: username,
 			EncryptedPassword: ShaHashing(password),
 			UserID:            uint(len(manager.Users)),
-			AssignedDatabase:  "usr" + strconv.Itoa(len(manager.Users)) + ".db"})
+			AssignedDatabase:  "data/usr" + strconv.Itoa(len(manager.Users)) + ".db"})
 	return manager.Save()
 }
 
-// DeleteAllUsers is a method inteded to only be used in tests to clean up
+// DeleteAllUsers is a method intended to only be used in tests to clean up
 func (manager *AuthenticationManager) DeleteAllUsers() error {
 	manager.Users = []User{}
 	for _, v := range manager.ActiveUsers {

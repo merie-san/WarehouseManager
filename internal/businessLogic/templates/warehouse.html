@@ -11,7 +11,7 @@
 </nav>
 <h1>Manage {{.Warehouse.Name}}</h1>
 <h2>Edit the information about the warehouse here!</h2>
-<form method="PUT" action="/warehouse/{{.Warehouse.ID}}">
+<form method="POST" action="/warehouse/{{.Warehouse.ID}}/edit">
     <label for="warehouseName">Name:</label><br>
     <input type="text" id="warehouseName" name="warehouseName" value="{{.Warehouse.Name}}" required> <br><br>
     <label for="warehousePosition">Position:</label><br>
@@ -22,5 +22,11 @@
     <br><br>
     <button type="submit">Change</button>
 </form>
+<h2>Access information about the items in the warehouse here!</h2>
+{{range .Items}}
+    <a href="/item/{{.ID}}">item "{{.Name}}"</a>
+{{else}}
+    <p>No items found in warehouse "{{.Warehouse.Name}}"</p>
+{{end}}
 </body>
 </html>

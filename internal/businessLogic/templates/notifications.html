@@ -1,6 +1,6 @@
 {{define "notifications"}}
 {{if .LoggedIn}}
-<div>Notifications: {{.APPMsg}}</div>
+<div>Notifications: {{.AuthMsg}} {{.APPNtf}}</div>
 {{else}}
 <div>Notifications: {{.AuthMsg}}</div>
 {{end}}

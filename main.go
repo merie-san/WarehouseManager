@@ -3,5 +3,5 @@ package main
 import "WarehouseManager/internal/businessLogic"
 
 func main() {
-	businessLogic.RunAPP()
+	businessLogic.RunAPP("internal/businessLogic/templates/")
 }

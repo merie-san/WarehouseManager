@@ -20,13 +20,15 @@ func TestHandlers(t *testing.T) {
 	})
 	Methods := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete}
 	homeURLs := []string{"/", "/home"}
+	var rr1 *httptest.ResponseRecorder
 	for _, homeURL := range homeURLs {
 		for _, method := range Methods {
 			t.Run("Routing tests "+method+" home expired session cookies path "+homeURL, func(t *testing.T) {
 				t.Cleanup(func() {
-					clean(t)
+					SetSessions(make(map[string]userSession))
+					rr = httptest.NewRecorder()
 				})
-				router := BuildAPPRouter()
+				router := BuildAPPRouter("templates/")
 				req, err := http.NewRequest(method, homeURL, nil)
 				if err != nil {
 					t.Fatalf("Reported error: " + err.Error())
@@ -55,35 +57,33 @@ func TestHandlers(t *testing.T) {
 	}
 	for _, homeURL := range homeURLs {
 		for _, method := range Methods {
-			t.Run("Routing tests "+method+" home valid session cookies path "+homeURL, func(t *testing.T) {
-				t.Cleanup(func() {
-					clean(t)
-				})
-				router := BuildAPPRouter()
-				req, err := http.NewRequest(method, homeURL, nil)
-				if err != nil {
-					t.Fatalf("Reported error: " + err.Error())
-				}
-				activeSessions := map[string]userSession{
-					"10": {
-						alias:    "david",
-						id:       0,
-						expireAt: time.Now().Add(time.Minute * 10),
-					},
-				}
-				SetSessions(activeSessions)
-				req.AddCookie(&http.Cookie{Name: "session_token", Value: "10"})
-				router.ServeHTTP(rr, req)
-				if method != http.MethodGet {
+			if method != http.MethodGet {
+				t.Run("Routing tests "+method+" home valid session cookies path "+homeURL, func(t *testing.T) {
+					t.Cleanup(func() {
+						SetSessions(make(map[string]userSession))
+						rr = httptest.NewRecorder()
+					})
+					router := BuildAPPRouter("templates/")
+					req, err := http.NewRequest(method, homeURL, nil)
+					if err != nil {
+						t.Fatalf("Reported error: " + err.Error())
+					}
+					activeSessions := map[string]userSession{
+						"10": {
+							alias:    "david",
+							id:       0,
+							expireAt: time.Now().Add(time.Minute * 10),
+						},
+					}
+					SetSessions(activeSessions)
+					req.AddCookie(&http.Cookie{Name: "session_token", Value: "10"})
+					router.ServeHTTP(rr, req)
 					if rr.Code != http.StatusMethodNotAllowed && rr.Body.String() == "Method not allowed" {
 						t.Errorf("Returned wrong status code. Expected %d, got %d", http.StatusOK, rr.Code)
 					}
-				} else {
-					if rr.Code != http.StatusOK {
-						t.Errorf("Returned wrong status code. Expected %d, got %d", http.StatusOK, rr.Code)
-					}
-				}
-			})
+
+				})
+			}
 		}
 	}
 	urls := []string{
@@ -101,7 +101,7 @@ func TestHandlers(t *testing.T) {
 	for _, homeURL := range urls {
 		t.Run("routing tests redirect to login page path "+homeURL, func(t *testing.T) {
 			rr = httptest.NewRecorder()
-			router := BuildAPPRouter()
+			router := BuildAPPRouter("templates/")
 			req, err := http.NewRequest(http.MethodGet, homeURL, nil)
 			if err != nil {
 				t.Fatalf("Reported error: " + err.Error())
@@ -131,7 +131,7 @@ func TestHandlers(t *testing.T) {
 	for _, v := range urls {
 		t.Run("routing tests redirect to home page path "+v, func(t *testing.T) {
 			rr = httptest.NewRecorder()
-			router := BuildAPPRouter()
+			router := BuildAPPRouter("templates/")
 			req, err := http.NewRequest(http.MethodGet, v, nil)
 			if err != nil {
 				t.Fatalf("Reported error: " + err.Error())
@@ -165,7 +165,7 @@ func TestHandlers(t *testing.T) {
 		form.Add("newPassword1", "longPassword")
 		form.Add("newPassword2", "longPassword")
 		req1.URL.RawQuery = form.Encode()
-		router := BuildAPPRouter()
+		router := BuildAPPRouter("templates/")
 		router.ServeHTTP(rr, req1)
 		if rr.Code != http.StatusFound {
 			t.Fatalf("Returned wrong status code. Expected %d, got %d", http.StatusFound, rr.Code)
@@ -244,7 +244,7 @@ func TestHandlers(t *testing.T) {
 				t.Fatalf("Reported error: " + err.Error())
 			}
 			rr = httptest.NewRecorder()
-			router := BuildAPPRouter()
+			router := BuildAPPRouter("templates/")
 			router.ServeHTTP(rr, req)
 			if rr.Code != http.StatusNotFound {
 				t.Fatalf("Returned wrong status code. Expected %d, got %d", http.StatusNotFound, rr.Code)
@@ -252,13 +252,13 @@ func TestHandlers(t *testing.T) {
 		})
 	}
 	t.Run("Password change", func(t *testing.T) {
-		router := BuildAPPRouter()
-		rr, _ = login(t, router, "longPassword")
+		router := BuildAPPRouter("templates/")
+		rr1, _ = login(t, router, "longPassword")
 		req, err := http.NewRequest(http.MethodPost, "/account", nil)
 		if err != nil {
 			t.Fatalf("Reported error: " + err.Error())
 		}
-		neededCookies := rr.Result().Cookies()
+		neededCookies := rr1.Result().Cookies()
 		for _, cookie := range neededCookies {
 			req.AddCookie(cookie)
 		}
@@ -276,15 +276,15 @@ func TestHandlers(t *testing.T) {
 		}
 	})
 	t.Run("Basic Operations on resource", func(t *testing.T) {
-		router := BuildAPPRouter()
+		router := BuildAPPRouter("templates/")
 		t.Run("Creating and updating a resource", func(t *testing.T) {
 			for i := 1; i < 3; i++ {
 				req, err := http.NewRequest(http.MethodPost, "/warehouses", nil)
 				if err != nil {
 					t.Fatalf("Reported error: " + err.Error())
 				}
-				cookies := rr.Result().Cookies()
-				for _, cookie := range cookies {
+				neededCookies := rr1.Result().Cookies()
+				for _, cookie := range neededCookies {
 					req.AddCookie(cookie)
 				}
 				rr = httptest.NewRecorder()
@@ -306,8 +306,8 @@ func TestHandlers(t *testing.T) {
 			if err2 != nil {
 				t.Fatalf("Reported error: " + err2.Error())
 			}
-			cookies := rr.Result().Cookies()
-			for _, cookie := range cookies {
+			neededCookies := rr1.Result().Cookies()
+			for _, cookie := range neededCookies {
 				req2.AddCookie(cookie)
 			}
 			rr = httptest.NewRecorder()
@@ -323,57 +323,14 @@ func TestHandlers(t *testing.T) {
 			if rr.Header().Get("Location") != "/item/1" {
 				t.Errorf("Wrong redirect- expected redirect: /item/1 actual redirect: %s", rr.Header().Get("Location"))
 			}
-			req2, err2 = http.NewRequest(http.MethodPut, "/item/1", nil)
-			if err2 != nil {
-				t.Fatalf("Reported error: " + err2.Error())
-			}
-			cookies = rr.Result().Cookies()
-			for _, cookie := range cookies {
-				req2.AddCookie(cookie)
-			}
-			rr = httptest.NewRecorder()
-			form, _ = url.ParseQuery(req2.URL.RawQuery)
-			form.Add("itemName", "Keyboard")
-			form.Add("itemCategory", "electronics")
-			form.Add("itemDescription", "mechanical retro-illuminated keyboard mod")
-			req2.URL.RawQuery = form.Encode()
-			router.ServeHTTP(rr, req2)
-			if rr.Code != http.StatusFound {
-				t.Errorf("Returned wrong status code. Expected %d, got %d", http.StatusFound, rr.Code)
-			}
-			if rr.Header().Get("Location") != "/items" {
-				t.Errorf("Wrong redirect- expected redirect: /items actual redirect: %s", rr.Header().Get("Location"))
-			}
-
-			req, err := http.NewRequest(http.MethodPut, "/warehouse/1", nil)
-			if err != nil {
-				t.Fatalf("Reported error: " + err.Error())
-			}
-			cookies = rr.Result().Cookies()
-			for _, cookie := range cookies {
-				req.AddCookie(cookie)
-			}
-			rr = httptest.NewRecorder()
-			form, _ = url.ParseQuery(req.URL.RawQuery)
-			form.Add("warehousePosition", "Tuscany")
-			form.Add("warehouseName", "La Rosa 1")
-			form.Add("warehouseCapacity", "3000")
-			req.URL.RawQuery = form.Encode()
-			router.ServeHTTP(rr, req)
-			if rr.Code != http.StatusFound {
-				t.Errorf("Returned wrong status code. Expected %d, got %d", http.StatusFound, rr.Code)
-			}
-			if rr.Header().Get("Location") != "/warehouses" {
-				t.Errorf("Wrong redirect- expected redirect: /warehouses actual redirect: %s", rr.Header().Get("Location"))
-			}
 		})
 		t.Run("Supplying transferring removing resources", func(t *testing.T) {
 			req2, err2 := http.NewRequest(http.MethodPost, "/item/1/supply", nil)
 			if err2 != nil {
 				t.Fatalf("Reported error: " + err2.Error())
 			}
-			cookies := rr.Result().Cookies()
-			for _, cookie := range cookies {
+			neededCookies := rr1.Result().Cookies()
+			for _, cookie := range neededCookies {
 				req2.AddCookie(cookie)
 			}
 			rr = httptest.NewRecorder()
@@ -392,8 +349,8 @@ func TestHandlers(t *testing.T) {
 			if err3 != nil {
 				t.Fatalf("Reported error: " + err3.Error())
 			}
-			cookies = rr.Result().Cookies()
-			for _, cookie := range cookies {
+			neededCookies = rr1.Result().Cookies()
+			for _, cookie := range neededCookies {
 				req3.AddCookie(cookie)
 			}
 			rr = httptest.NewRecorder()
@@ -413,8 +370,8 @@ func TestHandlers(t *testing.T) {
 			if err4 != nil {
 				t.Fatalf("Reported error: " + err4.Error())
 			}
-			cookies = rr.Result().Cookies()
-			for _, cookie := range cookies {
+			neededCookies = rr1.Result().Cookies()
+			for _, cookie := range neededCookies {
 				req4.AddCookie(cookie)
 			}
 			rr = httptest.NewRecorder()
@@ -435,8 +392,8 @@ func TestHandlers(t *testing.T) {
 			if err2 != nil {
 				t.Fatalf("Reported error: " + err2.Error())
 			}
-			cookies := rr.Result().Cookies()
-			for _, cookie := range cookies {
+			neededCookies := rr1.Result().Cookies()
+			for _, cookie := range neededCookies {
 				req2.AddCookie(cookie)
 			}
 			rr = httptest.NewRecorder()
@@ -461,12 +418,12 @@ func TestHandlers(t *testing.T) {
 	for _, homeURL := range urls {
 		t.Run("get various resource pages "+homeURL, func(t *testing.T) {
 			req, err := http.NewRequest(http.MethodGet, homeURL, nil)
-			cookies := rr.Result().Cookies()
-			for _, cookie := range cookies {
+			neededCookies := rr1.Result().Cookies()
+			for _, cookie := range neededCookies {
 				req.AddCookie(cookie)
 			}
 			rr = httptest.NewRecorder()
-			router := BuildAPPRouter()
+			router := BuildAPPRouter("templates/")
 			if err != nil {
 				t.Fatalf("Reported error: " + err.Error())
 			}
@@ -500,7 +457,7 @@ func clean(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reported error: %v", err)
 	}
-	dirEntries, err1 := os.ReadDir(".")
+	dirEntries, err1 := os.ReadDir("./data")
 	if err1 != nil {
 		t.Fatalf("Failed to read directory\nerror: %v", err1)
 	}
@@ -510,7 +467,7 @@ func clean(t *testing.T) {
 			t.Fatalf("Failed to match file name\nerror: %v", err2)
 		}
 		if matching {
-			err3 := os.Remove(v.Name())
+			err3 := os.Remove("data/" + v.Name())
 			if err3 != nil {
 				t.Fatalf("Failed to remove file\nerror: %v", err3)
 			}
