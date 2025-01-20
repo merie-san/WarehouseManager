@@ -13,13 +13,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // The various html files used in this project
 var htmlFiles = []string{
 	"account.html", "home.html", "login.html", "register.html", "warehouse.html", "warehouses.html", "items.html", "item.html",
-	"items_search.html", "warehouses_search.html", "not_found.html", "navbar.html", "notifications.html"}
+	"items_search.html", "warehouses_search.html", "not_found.html", "navbar.html", "notifications.html", "head.html"}
 
 // We complete the file path by appending the "templates/" prefix and parse them to generate a template file
 var templates *template.Template
@@ -49,12 +50,22 @@ type userSession struct {
 	expireAt time.Time
 }
 
+type UserSessions struct {
+	lock         sync.Mutex
+	userSessions map[string]userSession
+}
+
 // global variable to manage the sessions of clients
-var userSessions = make(map[string]userSession)
+var userSessions = UserSessions{
+	userSessions: make(map[string]userSession),
+	lock:         sync.Mutex{},
+}
 
 // SetSessions is a method used only for testing
 func SetSessions(sessions map[string]userSession) {
-	userSessions = sessions
+	userSessions.lock.Lock()
+	userSessions.userSessions = sessions
+	defer userSessions.lock.Unlock()
 }
 
 // isExpired is a utility function to check if a session is expired or not
@@ -80,7 +91,7 @@ type WarehousesPage struct {
 	Content []model.Warehouse
 }
 
-// similar to WarehousesPage
+// ItemsPage similar to WarehousesPage
 type ItemsPage struct {
 	Page
 	Content []model.Item
@@ -110,7 +121,7 @@ type WarehouseInfoForItemPage struct {
 	ItemQuantity int
 }
 
-// similar to ItemPage
+// WarehousePage similar to ItemPage
 type WarehousePage struct {
 	Page
 	Warehouse model.Warehouse
@@ -129,7 +140,7 @@ type AccountPage struct {
 	Username string
 }
 
-// Middleware for HomeHandler. It helps in showing the right messages in case of access without login
+// SessionIsAbsentHomeHandler is a Middleware for HomeHandler. It helps in showing the right messages in case of access without login
 func SessionIsAbsentHomeHandler(nextHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie("session_token")
@@ -145,7 +156,9 @@ func SessionIsAbsentHomeHandler(nextHandler http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 		}
-		session, ok := userSessions[c.Value]
+		userSessions.lock.Lock()
+		session, ok := userSessions.userSessions[c.Value]
+		userSessions.lock.Unlock()
 		if !ok || session.isExpired() {
 			err1 := templates.ExecuteTemplate(w, "home.html", &Page{LoggedIn: false, AuthMsg: "Previous session expired! Login again!"})
 			if err1 != nil {
@@ -205,7 +218,9 @@ func SessionIsAbsentRedirectHandler(nextHandler http.HandlerFunc) http.HandlerFu
 				return
 			}
 		}
-		session, ok := userSessions[c.Value]
+		userSessions.lock.Lock()
+		session, ok := userSessions.userSessions[c.Value]
+		userSessions.lock.Unlock()
 		if !ok || session.isExpired() {
 			setFlashMessage(&w, "authMsg", "Your previous session expired! Login again.", "/login")
 			http.Redirect(w, r, "/login", http.StatusFound)
@@ -220,11 +235,13 @@ func SessionIsAbsentRedirectHandler(nextHandler http.HandlerFunc) http.HandlerFu
 func createNewSession(w http.ResponseWriter, alias string, userID uint) {
 	newSessionToken := base64.URLEncoding.EncodeToString([]byte(auth.ShaHashing(strconv.Itoa(rand.Intn(1000000)))))
 	newExpiration := time.Now().Add(time.Minute * 5)
-	userSessions[newSessionToken] = userSession{
+	userSessions.lock.Lock()
+	userSessions.userSessions[newSessionToken] = userSession{
 		alias,
 		userID,
 		newExpiration,
 	}
+	userSessions.lock.Unlock()
 	http.SetCookie(w, &http.Cookie{
 		Name:    "session_token",
 		Value:   newSessionToken,
@@ -500,7 +517,7 @@ func DeleteItemHandler(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-// putItem allows for the modification of items from the corresponding /item page
+// EditItemHandler allows for the modification of items from the corresponding /item page
 func EditItemHandler(w http.ResponseWriter, r *http.Request) {
 	session, ok := getSession(&w, r)
 	if !ok {
@@ -584,7 +601,7 @@ func getItem(w *http.ResponseWriter, r *http.Request, session userSession, itemI
 	return
 }
 
-// handlers the Warehouse page
+// WarehouseHandler handlers the Warehouse page
 func WarehouseHandler(w http.ResponseWriter, r *http.Request) {
 	session, ok := getSession(&w, r)
 	if !ok {
@@ -610,7 +627,7 @@ func WarehouseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// deletes a given warehouse by id
+// DeleteWarehouseHandler deletes a given warehouse by id
 func DeleteWarehouseHandler(w http.ResponseWriter, r *http.Request) {
 	session, ok := getSession(&w, r)
 	if !ok {
@@ -633,7 +650,7 @@ func DeleteWarehouseHandler(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-// updates the info about a warehouse given its id
+// EditWarehouseHandler updates the info about a warehouse given its id
 func EditWarehouseHandler(w http.ResponseWriter, r *http.Request) {
 	session, ok := getSession(&w, r)
 	if !ok {
@@ -723,7 +740,7 @@ func fillSearchPage(w *http.ResponseWriter, r *http.Request, session userSession
 	return page
 }
 
-// operates the search page
+// ItemsSearchHandler operates the search page
 func ItemsSearchHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1004,7 +1021,7 @@ func getWarehouseSearchPage(w *http.ResponseWriter, r *http.Request) {
 	return
 }
 
-// Implements the default behaviour of the wab APP when dealing with invalid URLs
+// NotFoundHandler Implements the default behaviour of the wab APP when dealing with invalid URLs
 func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
 	err := templates.ExecuteTemplate(w, "not_found.html", r.URL)
@@ -1020,7 +1037,9 @@ func getSession(w *http.ResponseWriter, r *http.Request) (userSession, bool) {
 	if err1 != nil && !errors.Is(err1, http.ErrNoCookie) {
 		http.Error(*w, err1.Error(), http.StatusBadRequest)
 	}
-	session, ok := userSessions[c1.Value]
+	userSessions.lock.Lock()
+	session, ok := userSessions.userSessions[c1.Value]
+	userSessions.lock.Unlock()
 	return session, ok
 }
 
@@ -1029,7 +1048,9 @@ func SessionIsPresentHandler(nextHandler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie("session_token")
 		if err == nil {
-			session, ok := userSessions[c.Value]
+			userSessions.lock.Lock()
+			session, ok := userSessions.userSessions[c.Value]
+			userSessions.lock.Unlock()
 			if ok && !session.isExpired() {
 				setFlashMessage(&w, "authMsg", "You already have an active session!", "/home")
 				http.Redirect(w, r, `/home`, http.StatusFound)
@@ -1051,7 +1072,7 @@ func fillBasicPageAnonClients(w *http.ResponseWriter, r *http.Request) Page {
 	return page
 }
 
-// allows for the registration of users
+// RegisterHandler allows for the registration of users
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -1102,7 +1123,7 @@ func postRegister(w *http.ResponseWriter, r *http.Request) {
 	return
 }
 
-// operates the /login page
+// LoginHandler operates the /login page
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -1157,7 +1178,7 @@ func postLogin(w *http.ResponseWriter, r *http.Request) {
 	return
 }
 
-// logs the user out
+// LogoutHandler logs the user out
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	c1, err := r.Cookie("session_token")
 	if err != nil {
@@ -1169,7 +1190,8 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	session, ok := userSessions[c1.Value]
+	userSessions.lock.Lock()
+	session, ok := userSessions.userSessions[c1.Value]
 	if !ok || session.isExpired() {
 		http.Error(w, "Expired or wrong session found", http.StatusBadRequest)
 		return
@@ -1186,7 +1208,8 @@ func LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, referer, http.StatusFound)
 		return
 	}
-	delete(userSessions, c1.Value)
+	delete(userSessions.userSessions, c1.Value)
+	userSessions.lock.Unlock()
 	newC := http.Cookie{
 		Name:    "session_token",
 		Value:   "",
@@ -1289,27 +1312,38 @@ func setFlashMessage(w *http.ResponseWriter, name string, value string, path str
 	http.SetCookie(*w, &cookie)
 }
 
-// deletes expired userSessions from the environment
+// ManageUserSessions deletes expired userSessions from the environment
 func ManageUserSessions() {
-	time.Sleep(30 * time.Second)
-	expiredK := make([]string, 0)
-	for k, v := range userSessions {
-		if v.isExpired() {
-			expiredK = append(expiredK, k)
+	for {
+		elapsedTime := 0
+		time.Sleep(10 * time.Second)
+		elapsedTime += 10
+		userSessions.lock.Lock()
+		if userSessions.userSessions != nil && len(userSessions.userSessions) > 0 {
+			expiredK := make([]string, 0)
+			for k, v := range userSessions.userSessions {
+				if v.isExpired() {
+					expiredK = append(expiredK, k)
+				}
+			}
+			if expiredK != nil && len(expiredK) > 0 {
+				for _, k := range expiredK {
+					err := authManager.Logout(userSessions.userSessions[k].alias)
+					if err != nil {
+						panic(err)
+					}
+					delete(userSessions.userSessions, k)
+				}
+			}
 		}
-	}
-	for _, k := range expiredK {
-		err := authManager.Logout(userSessions[k].alias)
-		if err != nil {
-			panic(err)
-		}
-		delete(userSessions, k)
+		userSessions.lock.Unlock()
 	}
 }
 
-// Runs the APP
+// RunAPP Runs the APP
 func RunAPP(prefix string) {
 	router := BuildAPPRouter(prefix)
+	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 	srv := &http.Server{
 		Handler:      router,
 		Addr:         "127.0.0.1:8080",
@@ -1320,7 +1354,7 @@ func RunAPP(prefix string) {
 	log.Fatal(srv.ListenAndServe())
 }
 
-// uses gorilla mux to route the requests to the corresponding handler
+// BuildAPPRouter uses gorilla mux to route the requests to the corresponding handler
 func BuildAPPRouter(prefix string) *mux.Router {
 	GenerateTemplates(prefix)
 	router := mux.NewRouter()

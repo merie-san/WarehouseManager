@@ -1,67 +1,72 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
-    <title>Item page</title>
-</head>
+{{template "head" .}}
 <body>
-<nav>
-    {{template "navbar" .}}
-    {{template "notifications" .}}
-</nav>
+{{template "navbar" .}}
+{{template "notifications" .}}
 <header><h1>Manage {{.Item.Name}} here!</h1></header>
 <main>
-<h2>Edit the information about the item here!</h2>
-<form method="POST" action="/item/{{.Item.ID}}/edit">
-    <label for="itemName">Name:</label><br>
-    <input type="text" id="itemName" name="itemName" value="{{.Item.Name}}" required> <br><br>
-    <label for="itemCategory">Category:</label><br>
-    <input type="text" id="itemCategory" name="itemCategory" value="{{.Item.Category}}" required>
-    <br><br>
-    <label for="itemDescription">Description:</label><br>
-    <textarea id="itemDescription" name="itemDescription" rows="20" cols="60" required>{{.Item.Description}}</textarea>
-    <br><br>
-    <button type="submit">Change</button>
-</form>
-<p>You have {{.Item.Quantity}} of item "{{.Item.Name}}" in all warehouses</p>
-<h2>Supply items to your warehouses here!</h2>
-{{range .WarehousesWithAmount}}
-    <p>Warehouse: {{.Name}} - items in stock: {{.Amount}} </p>
-    <form action="/item/{{$.Item.ID}}/supply" method="POST">
-        <label for="amount1">amount to add</label>
-        <input type="number" id="amount1" name="amount" required><br><br>
-        <input type="hidden" name="warehouseID" value="{{.ID}}">
-        <button type="submit">Add</button>
-    </form>
-{{else}}
-    No warehouses present in the repository
-{{end}}
-<h2>Consume or transfer items between warehouses here!</h2>
-{{range .ItemPacks}}
-    <p>Warehouse: {{.WarehouseName}} - items in stock: {{.ItemQuantity}}</p>
-    <form action="/item/{{$.Item.ID}}/consume" method="POST">
-        <label for="amount2">amount to subtract</label>
-        <input type="number" id="amount2" name="amount" required><br><br>
-        <input type="hidden" name="warehouseID" value="{{.WarehouseID}}">
-        <button type="submit">Consume</button>
-    </form><br><br>
-    <form action="/item/{{$.Item.ID}}/transfer" method="POST">
-        <label for="amount3">amount to transfer</label>
-        <input type="number" id="amount3" name="amount" required><br><br>
-        <input type="hidden" name="srcID" value="{{.WarehouseID}}">
-        <label for="destID">choose destination warehouse</label>
-        <select id="destID" name="destID">
-            {{range $.WarehousesWithAmount}}
-                <option value="{{.ID}}">warehouse "{{.Name}}"</option>
-            {{end}}
-        </select><br><br>
-        <button type="submit">Transfer</button>
-    </form><br><br>
-{{else}}
-    <p>Item is absent from all warehouses</p>
-{{end}}
+    <div class="container">
+        <h2>Edit the information about the item here!</h2>
+        <form method="POST" action="/item/{{.Item.ID}}/edit">
+            <label for="itemName">Name:</label>
+            <input type="text" id="itemName" name="itemName" value="{{.Item.Name}}" required>
+            <label for="itemCategory">Category:</label>
+            <input type="text" id="itemCategory" name="itemCategory" value="{{.Item.Category}}" required>
+            <label for="itemDescription">Description:</label>
+            <textarea id="itemDescription" name="itemDescription" rows="20" cols="60"
+                      required>{{.Item.Description}}</textarea>
+            <button type="submit">Change</button>
+        </form>
+    </div>
+    <p>You have {{.Item.Quantity}} of item "{{.Item.Name}}" in all warehouses!</p>
+    <div class="container">
+        <h2>Supply items to your warehouses here!</h2>
+        {{range .WarehousesWithAmount}}
+            <h3>Warehouse: {{.Name}} - items in stock: {{.Amount}} </h3>
+            <div class="container2">
+                <form action="/item/{{$.Item.ID}}/supply" method="POST">
+                    <label for="amount1">amount to add:</label>
+                    <input type="number" id="amount1" name="amount" required>
+                    <input type="hidden" name="warehouseID" value="{{.ID}}">
+                    <button type="submit">Add</button>
+                </form>
+            </div>
+        {{else}}
+            <p>No warehouses present in the repository</p>
+        {{end}}
+        <h2>Consume or transfer items between warehouses here!</h2>
+        {{range .ItemPacks}}
+            <h3>Warehouse: {{.WarehouseName}} - items in stock: {{.ItemQuantity}}</h3>
+            <div class="container2">
+                <p>Consume items here:</p>
+                <form action="/item/{{$.Item.ID}}/consume" method="POST">
+                    <label for="amount2">amount to subtract:</label>
+                    <input type="number" id="amount2" name="amount" required>
+                    <input type="hidden" name="warehouseID" value="{{.WarehouseID}}">
+                    <button type="submit">Consume</button>
+                </form>
+            </div>
+            <div class="container2">
+                <p>Transfer items here:</p>
+                <form action="/item/{{$.Item.ID}}/transfer" method="POST">
+                    <label for="amount3">amount to transfer:</label>
+                    <input type="number" id="amount3" name="amount" required>
+                    <input type="hidden" name="srcID" value="{{.WarehouseID}}">
+                    <label for="destID">choose destination warehouse</label>
+                    <select id="destID" name="destID">
+                        {{range $.WarehousesWithAmount}}
+                            <option value="{{.ID}}">warehouse "{{.Name}}"</option>
+                        {{end}}
+                    </select>
+                    <button type="submit">Transfer</button>
+                </form>
+            </div>
+        {{else}}
+            <p>Item is absent from all warehouses</p>
+        {{end}}
+    </div>
 </main>
+<footer><p>Warehouse manager</p></footer>
 </body>
 </html>

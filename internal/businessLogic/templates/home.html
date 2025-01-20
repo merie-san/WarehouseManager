@@ -1,19 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
-    <title>Home Page</title>
-</head>
+{{template "head" .}}
 <body>
-<nav>
     {{template "navbar" .}}
     {{template "notifications" .}}
-</nav>
 <header><h1>Welcome to Warehouse Manager!</h1></header>
 <main>
-    <p>Warehouse Manager is a simple web application which allows you to record warehouses and manage the items inside!</p>
+    <p>Warehouse Manager is a simple web application designed to manage stock items in warehouses, register now to use its functionalities!</p>
 </main>
+<footer><p>Warehouse manager</p></footer>
 </body>
 </html>

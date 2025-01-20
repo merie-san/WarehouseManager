@@ -1,38 +1,39 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
-    <title>Warehouse page</title>
-</head>
+{{template "head" .}}
 <body>
-<nav>
-    {{template "navbar" .}}
-    {{template "notifications" .}}
-</nav>
+{{template "navbar" .}}
+{{template "notifications" .}}
 <header>
     <h1>Manage {{.Warehouse.Name}}</h1>
 </header>
 <main>
-<h2>Edit the information about the warehouse here!</h2>
-<form method="POST" action="/warehouse/{{.Warehouse.ID}}/edit">
-    <label for="warehouseName">Name:</label><br>
-    <input type="text" id="warehouseName" name="warehouseName" value="{{.Warehouse.Name}}" required> <br><br>
-    <label for="warehousePosition">Position:</label><br>
-    <input type="text" id="warehousePosition" name="warehousePosition" value="{{.Warehouse.Position}}" required>
-    <br><br>
-    <label for="warehouseCapacity">Capacity:</label><br>
-    <input type="number" id="warehouseCapacity" name="warehouseCapacity" value="{{.Warehouse.Capacity}}" required>
-    <br><br>
-    <button type="submit">Change</button>
-</form>
-<h2>Access information about the items in the warehouse here!</h2>
-{{range .Items}}
-    <a href="/item/{{.ID}}">item "{{.Name}}"</a>
-{{else}}
-    <p>No items found in warehouse "{{.Warehouse.Name}}"</p>
-{{end}}
+    <div class="container">
+        <h2>Edit the information about the warehouse here!</h2>
+        <form method="POST" action="/warehouse/{{.Warehouse.ID}}/edit">
+            <label for="warehouseName">Name:</label>
+            <input type="text" id="warehouseName" name="warehouseName" value="{{.Warehouse.Name}}" required>
+            <label for="warehousePosition">Position:</label>
+            <input type="text" id="warehousePosition" name="warehousePosition" value="{{.Warehouse.Position}}" required>
+            <label for="warehouseCapacity">Capacity:</label>
+            <input type="number" id="warehouseCapacity" name="warehouseCapacity" value="{{.Warehouse.Capacity}}"
+                   required>
+            <button type="submit">Change</button>
+        </form>
+    </div>
+    <div class="container">
+        <h2>Access information about the items in the warehouse here!</h2>
+        {{if .Items}}
+            <div class="grid-single-column">
+            {{range .Items}}
+                <a href="/item/{{.ID}}">item "{{.Name}}"</a>
+            {{end}}
+            </div>
+        {{else}}
+            <p>No items found in warehouse "{{.Warehouse.Name}}"</p>
+        {{end}}
+    </div>
 </main>
+<footer><p>Warehouse manager</p></footer>
 </body>
 </html>

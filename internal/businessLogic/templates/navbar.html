@@ -1,30 +1,30 @@
 {{define "navbar"}}
     {{if .LoggedIn}}
-        <nav>
-            <form action="/logout" method="post">
+        <nav class="nav-bar">
+            <form action="/" method="GET">
+                <button>Home</button>
+            </form>
+            <form action="/items" method="GET">
+                <button>Go to items</button>
+            </form>
+            <form action="/warehouses" method="GET">
+                <button>Go to warehouses</button>
+            </form>
+            <form action="/items/search" method="GET">
+                <button>Search for items</button>
+            </form>
+            <form action="/warehouses/search" method="GET">
+                <button>Search for warehouses</button>
+            </form>
+            <form action="/account" method="GET">
+                <button>Change password</button>
+            </form>
+            <form action="/logout" method="POST">
                 <button type="submit">Logout</button>
             </form>
-            <a href="/account">
-                <button>Change password</button>
-            </a>
-            <a href="/">
-                <button>Home</button>
-            </a>
-            <a href="/items">
-                <button>Go to items</button>
-            </a>
-            <a href="/warehouses">
-                <button>Go to warehouses</button>
-            </a>
-            <a href="/items/search">
-                <button>Search for items</button>
-            </a>
-            <a href="/warehouses/search">
-                <button>Search for warehouses</button>
-            </a>
         </nav>
     {{else}}
-        <nav>
+        <nav class="nav-bar">
             <a href="/">
                 <button>Home</button>
             </a>

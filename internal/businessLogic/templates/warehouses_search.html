@@ -1,35 +1,39 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
-    <title>Warehouses search page</title>
-</head>
+{{template "head" .}}
 <body>
-<nav>
-    {{template "navbar" .}}
-    {{template "notifications" .}}
-</nav>
+{{template "navbar" .}}
+{{template "notifications" .}}
 <header><h1>Search for warehouses and view your search results here!</h1></header>
 <main>
-<h2>Search for warehouses here!</h2>
-<form action="/warehouses/search" method="POST">
-    <label for="warehouseID">warehouse ID:</label><br>
-    <input type="number" id="warehouseID" name="warehouseID"> <br><br>
-    <label for="warehouseName">warehouse name:</label><br>
-    <input type="text" id="warehouseName" name="warehouseName"> <br><br>
-    <label for="warehousePosition">warehouse position:</label><br>
-    <input type="text" id="warehousePosition" name="warehousePosition">
-    <br><br>
-    <button type="submit">Search</button>
-</form>
-<h2>View your results here!</h2>
-{{range .Warehouses}}
-    <a href="/warehouse/{{.ID}}">warehouse "{{.Name}}"</a>
-{{else}}
-    No results
-{{end}}
+    <div class="container">
+        <h2>Search for warehouses here!</h2>
+        <form action="/warehouses/search" method="POST">
+            <label for="warehouseID">warehouse ID:</label><br>
+            <input type="number" id="warehouseID" name="warehouseID"> <br><br>
+            <label for="warehouseName">warehouse name:</label><br>
+            <input type="text" id="warehouseName" name="warehouseName"> <br><br>
+            <label for="warehousePosition">warehouse position:</label><br>
+            <input type="text" id="warehousePosition" name="warehousePosition">
+            <br><br>
+            <button type="submit">Search</button>
+        </form>
+    </div>
+    <div class="container">
+        <h2>View your results here!</h2>
+        {{if .Warehouses}}
+            <div class="grid-single-column">
+                {{range .Warehouses}}
+                    <a href="/warehouse/{{.ID}}">
+                        <button class="link-button">warehouse "{{.Name}}"</button>
+                    </a>
+                {{end}}
+            </div>
+        {{else}}
+            <p>No results</p>
+        {{end}}
+    </div>
 </main>
+<footer><p>Warehouse manager</p></footer>
 </body>
 </html>
