@@ -1,7 +1,7 @@
 package main
 
-import "WarehouseManager/internal/businessLogic"
+import "WarehouseManager/internal/handlers"
 
 func main() {
-	businessLogic.RunAPP("internal/businessLogic/templates/")
+	handlers.RunAPP("internal/businessLogic/templates/")
 }

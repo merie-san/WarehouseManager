@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<body>
+{{template "navbar" .}}
+{{template "notifications" .}}
+<header><h1>View, create and delete your items here!</h1></header>
+<main>
+    <div class="container">
+        <h2>Delete your items and view their pages here!</h2>
+        {{if .Content}}
+            <div class="grid-two-columns">
+                {{range .Content}}
+                    <a href="/item/{{.ID}}"><button class="link-button">item "{{.Name}}"</button></a>
+                    <form action="/item/{{.ID}}/delete" method="POST">
+                        <button type="submit">Delete</button>
+                    </form>
+                {{end}}
+            </div>
+        {{else}}
+            No items present in repository
+        {{end}}
+    </div>
+    <div class="container">
+        <h2>Create new items here!</h2>
+        <form action="/items" method="POST">
+            <label for="itemName">Name:</label>
+            <input type="text" id="itemName" name="itemName" required>
+            <label for="itemCategory">Category:</label>
+            <input type="text" id="itemCategory" name="itemCategory" required>
+            <label for="itemDescription">Description:</label>
+            <textarea id="itemDescription" name="itemDescription" rows="20" cols="60" required></textarea>
+            <button type="submit">Create</button>
+        </form>
+    </div>
+</main>
+<footer><p>Warehouse manager</p></footer>
+</body>
+</html>

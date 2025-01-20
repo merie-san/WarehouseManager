@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<body>
+{{template "navbar" .}}
+{{template "notifications" .}}
+<header>
+    <h1>Change your password here!</h1>
+</header>
+<main>
+    <div class="container">
+        <form method="POST" action="/account">
+            <h2>account name: "{{.Username}}"</h2>
+            <label for="oldPassword">Enter your old password here:</label>
+            <input type="password" id="oldPassword" name="oldPassword">
+            <label for="newPassword">Enter your new password here:</label>
+            <input type="password" id="newPassword" name="newPassword">
+            <button type="submit">Change</button>
+        </form>
+    </div>
+</main>
+<footer><p>Warehouse manager</p></footer>
+</body>
+</html>

@@ -48,5 +48,6 @@
 .link-button {
     font-size: 16px;
     padding: 5px 10px;
-    background-color: #6666;
+    background-color: #aaaa;
+    border-color: cornflowerblue;
 }

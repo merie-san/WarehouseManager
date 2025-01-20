@@ -1,0 +1,12 @@
+{{define "notifications"}}
+{{if .LoggedIn}}
+<div>Notifications: {{.AuthMsg}} {{.APPNtf}}</div>
+{{else}}
+<div>Notifications: {{.AuthMsg}}</div>
+{{end}}
+<div style="color: red">Server errors:
+    {{if .APPError}}
+    {{.APPError}}
+    {{end}}
+</div>
+{{end}}
